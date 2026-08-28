@@ -28,8 +28,17 @@ export type SetupGroup = 'fork' | 'shock' | 'sag' | 'geometry'
 export interface SetupField {
   key: string
   label: string
+  /**
+   * The label without the "fork"/"shock" prefix, for use under a section
+   * heading that already says which end of the bike this is. Long labels
+   * wrap to three lines in a two-column grid on a phone, which is where
+   * this actually gets read.
+   */
+  shortLabel: string
   group: SetupGroup
   unit: 'clicks' | 'turns' | 'mm'
+  /** One press of a +/- control: the smallest change worth making. */
+  step: number
   /** Short reminder of which way the numbers run. */
   convention?: string
   /** What the bike does when this number goes up. */
@@ -59,8 +68,10 @@ export const SETUP_FIELDS: SetupField[] = [
   {
     key: 'fork.compression',
     label: 'Fork compression',
+    shortLabel: 'Compression',
     group: 'fork',
     unit: 'clicks',
+    step: 1,
     convention: 'clicks out from fully closed',
     increaseEffect: 'softer front — dives more, absorbs bumps better',
     decreaseEffect: 'firmer front — holds up under brakes, less compliance',
@@ -71,8 +82,10 @@ export const SETUP_FIELDS: SetupField[] = [
   {
     key: 'fork.rebound',
     label: 'Fork rebound',
+    shortLabel: 'Rebound',
     group: 'fork',
     unit: 'clicks',
+    step: 1,
     convention: 'clicks out from fully closed',
     increaseEffect: 'front returns faster — more lively, can feel loose',
     decreaseEffect: 'front returns slower — settled, but can pack down over bumps',
@@ -83,8 +96,10 @@ export const SETUP_FIELDS: SetupField[] = [
   {
     key: 'fork.preload',
     label: 'Fork preload',
+    shortLabel: 'Preload',
     group: 'fork',
     unit: 'turns',
+    step: 0.25,
     convention: 'turns in from fully soft',
     increaseEffect: 'front rides higher, less sag, more support on entry',
     decreaseEffect: 'front rides lower, more sag, more initial compliance',
@@ -95,8 +110,10 @@ export const SETUP_FIELDS: SetupField[] = [
   {
     key: 'fork.height',
     label: 'Fork height in clamps',
+    shortLabel: 'Height in clamps',
     group: 'fork',
     unit: 'mm',
+    step: 1,
     convention: 'mm of tube showing above the top triple clamp',
     increaseEffect: 'front end lower — quicker steering, more front load, less stability',
     decreaseEffect: 'front end higher — slower steering, more stability',
@@ -106,8 +123,10 @@ export const SETUP_FIELDS: SetupField[] = [
   {
     key: 'fork.oilHeight',
     label: 'Fork oil height',
+    shortLabel: 'Oil height',
     group: 'fork',
     unit: 'mm',
+    step: 5,
     convention: 'mm from the top of the compressed tube — smaller means more oil',
     increaseEffect: 'less oil — softer at the end of the stroke, easier to bottom',
     decreaseEffect: 'more oil — firmer at the end of the stroke, resists bottoming',
@@ -117,8 +136,10 @@ export const SETUP_FIELDS: SetupField[] = [
   {
     key: 'shock.compressionLow',
     label: 'Shock low-speed compression',
+    shortLabel: 'Low-speed compression',
     group: 'shock',
     unit: 'clicks',
+    step: 1,
     convention: 'clicks out from fully closed',
     increaseEffect: 'softer rear on throttle — squats more, more mechanical grip',
     decreaseEffect: 'firmer rear on throttle — holds height on exit, less squat',
@@ -129,8 +150,10 @@ export const SETUP_FIELDS: SetupField[] = [
   {
     key: 'shock.compressionHigh',
     label: 'Shock high-speed compression',
+    shortLabel: 'High-speed compression',
     group: 'shock',
     unit: 'turns',
+    step: 0.25,
     convention: 'turns out from fully closed',
     increaseEffect: 'softer over kerbs and sharp bumps',
     decreaseEffect: 'firmer over kerbs — more control, harsher hits',
@@ -141,8 +164,10 @@ export const SETUP_FIELDS: SetupField[] = [
   {
     key: 'shock.rebound',
     label: 'Shock rebound',
+    shortLabel: 'Rebound',
     group: 'shock',
     unit: 'clicks',
+    step: 1,
     convention: 'clicks out from fully closed',
     increaseEffect: 'rear returns faster — more drive, can feel unsettled',
     decreaseEffect: 'rear returns slower — settled, but packs down over bumps',
@@ -153,8 +178,10 @@ export const SETUP_FIELDS: SetupField[] = [
   {
     key: 'shock.preload',
     label: 'Shock preload',
+    shortLabel: 'Preload',
     group: 'shock',
     unit: 'turns',
+    step: 0.25,
     convention: 'turns in from fully soft',
     increaseEffect: 'less rear sag, rear sits higher, quicker steering',
     decreaseEffect: 'more rear sag, rear sits lower, slower steering',
@@ -165,8 +192,10 @@ export const SETUP_FIELDS: SetupField[] = [
   {
     key: 'shock.rideHeight',
     label: 'Rear ride height',
+    shortLabel: 'Ride height',
     group: 'shock',
     unit: 'mm',
+    step: 1,
     convention: 'mm of shock/linkage rod length, or a measured height',
     increaseEffect: 'rear higher — quicker steering, more weight on the front',
     decreaseEffect: 'rear lower — slower steering, more stability, more rear grip',

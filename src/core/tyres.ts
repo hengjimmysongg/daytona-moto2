@@ -15,7 +15,7 @@
  */
 
 import { ATMOSPHERIC_BAR, celsiusToKelvin } from './units'
-import type { Axle, Session, TyreRun, TyreWear } from './types'
+import type { Session, TyreRun, TyreWear } from './types'
 
 /** Pressure rise across a session, bar. Undefined if either end is missing. */
 export function pressureRise(run: Pick<TyreRun, 'coldPressure' | 'hotPressure'>): number | undefined {
@@ -298,11 +298,4 @@ export function tyreUsage(sessions: ReadonlyArray<Session>, tyreId: string): {
   }
   if (lastUsed !== undefined) usage.lastUsed = lastUsed
   return usage
-}
-
-/** Pull every run of one axle out of a list of sessions, newest first. */
-export function runsForAxle(sessions: ReadonlyArray<Session>, axle: Axle): TyreRun[] {
-  return [...sessions]
-    .sort((a, b) => (b.startedAt ?? b.createdAt) - (a.startedAt ?? a.createdAt))
-    .map((session) => session.tyres[axle])
 }

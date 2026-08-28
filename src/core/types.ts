@@ -14,7 +14,7 @@
  * and lives in `Preferences`, never in the data itself.
  */
 
-import type { LengthUnit, MassUnit, PressureUnit, TemperatureUnit } from './units'
+import type { MassUnit, PressureUnit, TemperatureUnit } from './units'
 
 /** Milliseconds since epoch. */
 export type Timestamp = number
@@ -280,7 +280,11 @@ export interface TrackDay {
 export interface Preferences {
   pressureUnit: PressureUnit
   temperatureUnit: TemperatureUnit
-  lengthUnit: LengthUnit
+  /**
+   * Rider weight only. Suspension measurements are millimetres everywhere,
+   * on every bike, in every country — making that switchable would buy
+   * nothing and invite a unit mix-up in the one place it would hurt most.
+   */
   massUnit: MassUnit
   /** Hot pressure the rider is aiming for, bar, per axle. */
   targetHotPressure: { front: number; rear: number }

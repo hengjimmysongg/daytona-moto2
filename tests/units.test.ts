@@ -14,6 +14,7 @@ import {
   temperatureFromC,
   temperatureToC,
 } from '../src/core/units'
+import { formatLapDelta, formatLapTime, parseLapTime } from '../src/core/laptime'
 
 describe('pressure', () => {
   it('converts bar to psi at the known ratio', () => {
@@ -92,5 +93,50 @@ describe('helpers', () => {
     expect(parseNumber('')).toBeNull()
     expect(parseNumber('abc')).toBeNull()
     expect(parseNumber('.')).toBeNull()
+  })
+})
+
+describe('lap times', () => {
+  it('parses the way riders write them', () => {
+    expect(parseLapTime('1:52.34')).toBeCloseTo(112.34, 10)
+    expect(parseLapTime('1.52.34')).toBeCloseTo(112.34, 10)
+    expect(parseLapTime('112.34')).toBeCloseTo(112.34, 10)
+    expect(parseLapTime('52.3')).toBeCloseTo(52.3, 10)
+    expect(parseLapTime('1:52')).toBeCloseTo(112, 10)
+    expect(parseLapTime(' 1:52.345 ')).toBeCloseTo(112.345, 10)
+  })
+
+  it('reads a dot by how many parts follow it', () => {
+    // Three parts can only be minutes; two parts is a lap under a minute.
+    expect(parseLapTime('1.52.34')).toBeCloseTo(112.34, 10)
+    expect(parseLapTime('58.70')).toBeCloseTo(58.7, 10)
+    expect(parseLapTime('112.34')).toBeCloseTo(112.34, 10)
+  })
+
+  it('rejects what is not a lap time', () => {
+    expect(parseLapTime('')).toBeNull()
+    expect(parseLapTime('fast')).toBeNull()
+    // 72 seconds inside a minutes field is a typo, not a time.
+    expect(parseLapTime('1:72.00')).toBeNull()
+    expect(parseLapTime('1.72.00')).toBeNull()
+  })
+
+  it('formats back to the way riders read them', () => {
+    expect(formatLapTime(112.34)).toBe('1:52.34')
+    expect(formatLapTime(52.3)).toBe('52.30')
+    expect(formatLapTime(63)).toBe('1:03.00')
+    expect(formatLapTime(undefined)).toBe('—')
+  })
+
+  it('round-trips', () => {
+    for (const text of ['1:52.34', '2:01.09', '58.70']) {
+      expect(formatLapTime(parseLapTime(text) as number)).toBe(text)
+    }
+  })
+
+  it('signs a gap', () => {
+    expect(formatLapDelta(-0.34)).toBe('−0.34')
+    expect(formatLapDelta(1.02)).toBe('+1.02')
+    expect(formatLapDelta(0)).toBe('0.00')
   })
 })

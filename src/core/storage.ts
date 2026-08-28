@@ -33,7 +33,6 @@ export function defaultPreferences(): Preferences {
   return {
     pressureUnit: 'psi',
     temperatureUnit: 'F',
-    lengthUnit: 'mm',
     massUnit: 'lb',
     // Starting points only — replace with the hot pressures from your own
     // tyre's data sheet, which is the number that actually matters.
@@ -173,7 +172,6 @@ function mergePreferences(base: Preferences, raw: unknown): Preferences {
   return {
     pressureUnit: incoming.pressureUnit ?? base.pressureUnit,
     temperatureUnit: incoming.temperatureUnit ?? base.temperatureUnit,
-    lengthUnit: incoming.lengthUnit ?? base.lengthUnit,
     massUnit: incoming.massUnit ?? base.massUnit,
     targetHotPressure: {
       front: incoming.targetHotPressure?.front ?? base.targetHotPressure.front,

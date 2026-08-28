@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   cloneSetup,
   diffSetups,
+  fieldsInGroup,
+  SETUP_FIELDS,
   emptySetup,
   isSetupEmpty,
   isSingleChange,
@@ -76,6 +78,27 @@ describe('diffSetups', () => {
     const one = diffSetups(base, { ...base, fork: { ...base.fork, rebound: 9 } })
     expect(isSingleChange(one)).toBe(true)
     expect(summariseDiff(one)).toBe('Fork rebound 10 → 9 clicks')
+  })
+})
+
+describe('field metadata', () => {
+  it('gives every field a short label for use under a section heading', () => {
+    for (const field of SETUP_FIELDS) {
+      expect(field.shortLabel, field.key).toBeTruthy()
+      expect(field.shortLabel.length, field.key).toBeLessThanOrEqual(field.label.length)
+    }
+  })
+
+  it('keeps short labels unique inside a group, since that is all you see there', () => {
+    for (const group of ['fork', 'shock'] as const) {
+      const labels = fieldsInGroup(group).map((field) => field.shortLabel)
+      expect(new Set(labels).size, group).toBe(labels.length)
+    }
+  })
+
+  it('nudges damping by a click and preload by a quarter turn', () => {
+    expect(SETUP_FIELDS_BY_KEY.get('fork.compression')!.step).toBe(1)
+    expect(SETUP_FIELDS_BY_KEY.get('shock.preload')!.step).toBe(0.25)
   })
 })
 

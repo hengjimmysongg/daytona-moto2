@@ -4,7 +4,6 @@ import {
   pressureRise,
   recommendColdPressure,
   recommendFromHistory,
-  runsForAxle,
   tyreUsage,
   wearGuidance,
 } from '../src/core/tyres'
@@ -181,14 +180,5 @@ describe('tyreUsage', () => {
 
   it('ignores tyres that were never fitted', () => {
     expect(tyreUsage([session('a', 'tyre1')], 'tyre2').sessions).toBe(0)
-  })
-})
-
-describe('runsForAxle', () => {
-  it('returns runs newest first', () => {
-    const older = session('a', 'f1', 'r1', 100)
-    const newer = session('b', 'f2', 'r2', 900)
-    const runs = runsForAxle([older, newer], 'front')
-    expect(runs.map((run) => run.tyreId)).toEqual(['f2', 'f1'])
   })
 })
