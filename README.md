@@ -105,6 +105,24 @@ in development and a hosted database in production, chosen by a URL.
    Open the site, go to **Garage → Sync**, and paste the `TRACKER_API_KEY`. The
    browser stores it and syncs from then on.
 
+### Deploying from CI
+
+`.github/workflows/deploy.yml` does step 4 on every push, so it only has to
+happen by hand the first time. It needs two repository secrets, under
+*Settings → Secrets and variables → Actions*:
+
+| Secret | Where to find it |
+| --- | --- |
+| `NETLIFY_AUTH_TOKEN` | [app.netlify.com](https://app.netlify.com) → *User settings → Applications* |
+| `NETLIFY_SITE_ID` | *Site configuration → General → Site information* (the API ID) |
+
+A push to the default branch goes to production; any other branch gets its own
+preview URL. The test suite runs first either way, so a red test cannot deploy.
+
+The variables below are deliberately *not* set by the workflow. They belong to
+the site rather than to the build — the function reads them at request time,
+long after the build has finished — so they stay in the Netlify UI.
+
 ### Environment variables
 
 | Variable | Required | What it does |
