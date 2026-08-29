@@ -54,12 +54,14 @@ describe('load and save', () => {
     expect(loaded.trackDays[0]!.circuit).toBe('Daytona')
   })
 
-  it('stamps the save time and schema version', () => {
+  it('stamps the schema version but leaves updatedAt to the caller', () => {
     const storage = memoryStorage()
-    saveGarage(storage, { ...createEmptyGarage(0), version: 0 })
+    saveGarage(storage, { ...createEmptyGarage(0), version: 0, updatedAt: 4242 })
     const stored = JSON.parse(storage.getItem(STORAGE_KEY) as string)
     expect(stored.version).toBe(SCHEMA_VERSION)
-    expect(stored.updatedAt).toBeGreaterThan(0)
+    // Re-stamping here would make the stored copy disagree with the one in
+    // memory, and sync compares exactly this number.
+    expect(stored.updatedAt).toBe(4242)
   })
 
   it('degrades to an empty garage rather than blowing up on a corrupt record', () => {

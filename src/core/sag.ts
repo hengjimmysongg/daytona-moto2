@@ -33,7 +33,7 @@ export interface SagMeasurement {
   withRider: number
 }
 
-export type Window = readonly [number, number]
+export type SagWindow = readonly [number, number]
 
 export type RangeStatus = 'low' | 'ok' | 'high'
 
@@ -43,8 +43,8 @@ export interface SagResult {
   axle: Axle
   riderSag: number
   freeSag?: number
-  riderSagTarget: Window
-  freeSagTarget?: Window
+  riderSagTarget: SagWindow
+  freeSagTarget?: SagWindow
   riderSagStatus: RangeStatus
   freeSagStatus?: RangeStatus
   springVerdict: SpringVerdict
@@ -62,13 +62,13 @@ export interface SagResult {
 
 export class SagError extends Error {}
 
-export function statusFor(value: number, [min, max]: Window): RangeStatus {
+export function statusFor(value: number, [min, max]: SagWindow): RangeStatus {
   if (value < min) return 'low'
   if (value > max) return 'high'
   return 'ok'
 }
 
-function midpoint([min, max]: Window): number {
+function midpoint([min, max]: SagWindow): number {
   return (min + max) / 2
 }
 
@@ -109,7 +109,7 @@ export function computeSag(m: SagMeasurement): { riderSag: number; freeSag?: num
   return { riderSag, freeSag }
 }
 
-export function targetsFor(targets: SagTargets, axle: Axle): { rider: Window; free: Window } {
+export function targetsFor(targets: SagTargets, axle: Axle): { rider: SagWindow; free: SagWindow } {
   return axle === 'front'
     ? { rider: targets.frontRider, free: targets.frontFree }
     : { rider: targets.rearRider, free: targets.rearFree }
@@ -131,10 +131,10 @@ export function analyseSag(args: {
   const { axle, measurement, targets } = args
   const motionRatio = args.motionRatio && args.motionRatio > 0 ? args.motionRatio : 1
   const { riderSag, freeSag } = computeSag(measurement)
-  const window = targetsFor(targets, axle)
+  const windows = targetsFor(targets, axle)
 
-  const riderSagStatus = statusFor(riderSag, window.rider)
-  const freeSagStatus = freeSag === undefined ? undefined : statusFor(freeSag, window.free)
+  const riderSagStatus = statusFor(riderSag, windows.rider)
+  const freeSagStatus = freeSag === undefined ? undefined : statusFor(freeSag, windows.free)
 
   const notes: string[] = []
 
@@ -143,7 +143,7 @@ export function analyseSag(args: {
   let preloadChangeMm: number | undefined
   let preloadChangeTurns: number | undefined
   if (riderSagStatus !== 'ok') {
-    const wanted = midpoint(window.rider)
+    const wanted = midpoint(windows.rider)
     const wheelDelta = riderSag - wanted // positive: sagging too much
     preloadChangeMm = wheelDelta / motionRatio
     if (args.preloadMmPerTurn && args.preloadMmPerTurn > 0) {
@@ -151,8 +151,8 @@ export function analyseSag(args: {
     }
     notes.push(
       riderSagStatus === 'high'
-        ? `Rider sag is ${fmt(riderSag - window.rider[1])} mm over the top of the window — add preload.`
-        : `Rider sag is ${fmt(window.rider[0] - riderSag)} mm under the window — back preload off.`,
+        ? `Rider sag is ${fmt(riderSag - windows.rider[1])} mm over the top of the window — add preload.`
+        : `Rider sag is ${fmt(windows.rider[0] - riderSag)} mm under the window — back preload off.`,
     )
   } else {
     notes.push('Rider sag is in the window — preload is where it should be.')
@@ -188,7 +188,7 @@ export function analyseSag(args: {
   const result: SagResult = {
     axle,
     riderSag,
-    riderSagTarget: window.rider,
+    riderSagTarget: windows.rider,
     riderSagStatus,
     springVerdict,
     springVerdictReliable,
@@ -196,7 +196,7 @@ export function analyseSag(args: {
   }
   if (freeSag !== undefined) {
     result.freeSag = freeSag
-    result.freeSagTarget = window.free
+    result.freeSagTarget = windows.free
     result.freeSagStatus = freeSagStatus
   }
   if (preloadChangeMm !== undefined) result.preloadChangeMm = preloadChangeMm

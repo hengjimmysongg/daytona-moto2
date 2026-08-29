@@ -426,11 +426,11 @@ function TyreCard({
   // Everything run on this axle today, newest first, so the recommendation
   // can average the rise across the day rather than trusting one reading.
   const today = sessionsForDay(data, session.trackDayId)
-  const history = [...today]
+  const previousRuns = [...today]
     .filter((candidate) => candidate.number <= session.number)
     .sort((a, b) => b.number - a.number)
     .map((candidate) => candidate.tyres[axle])
-  const recommendation = recommendFromHistory(history, target)
+  const recommendation = recommendFromHistory(previousRuns, target)
 
   const step = pressureStepBar(prefs)
   const wear = run.wear

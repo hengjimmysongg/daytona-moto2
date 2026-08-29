@@ -62,7 +62,15 @@ export function useGarage(): Garage {
   }, [data, storage])
 
   const update = useCallback((fn: (current: GarageData) => GarageData) => {
-    setData((current) => fn(current))
+    setData((current) => {
+      const next = fn(current)
+      if (next === current) return current
+      // Every edit moves the document's clock, here in memory rather than on
+      // the way to disk. Sync decides what to push by comparing this stamp
+      // with the server's, so if only the stored copy moved, a change would
+      // be saved locally and silently never leave the device.
+      return { ...next, updatedAt: Date.now() }
+    })
   }, [])
 
   const replace = useCallback((next: GarageData) => setData(next), [])

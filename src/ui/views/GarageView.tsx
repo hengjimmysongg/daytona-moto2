@@ -17,8 +17,9 @@ import { massFromKg, massToKg } from '../../core/units'
 import { BIKE_TEMPLATES } from '../../data/presets'
 import type { Bike, GarageData, Preferences } from '../../core/types'
 import type { Garage } from '../store'
+import type { Sync } from '../sync'
 
-export function GarageView({ garage }: { garage: Garage }) {
+export function GarageView({ garage, sync }: { garage: Garage; sync: Sync }) {
   const { data, update, replace } = garage
   const [editingId, setEditingId] = useState<string | null>(null)
   const editing = data.bikes.find((bike) => bike.id === editingId)
@@ -107,9 +108,93 @@ export function GarageView({ garage }: { garage: Garage }) {
         onChange={(preferences) => update((current) => ({ ...current, preferences }))}
       />
 
+      <SyncCard sync={sync} />
+
       <DataCard data={data} onReplace={replace} />
     </>
   )
+}
+
+/* ------------------------------------------------------------------ */
+
+/**
+ * The server side of the log.
+ *
+ * The key is the whole access control story for this deployment, so it is
+ * stated plainly rather than dressed up as a login: whoever has it can read
+ * and write this garage, through the browser or through the API.
+ */
+function SyncCard({ sync }: { sync: Sync }) {
+  const [draft, setDraft] = useState(sync.key ?? '')
+
+  return (
+    <Card
+      title="Sync"
+      hint="Your log is saved on this device first and copied to the server when there is a signal. Without a key it stays on this device only."
+    >
+      <TextField
+        label="API key"
+        hint="The TRACKER_API_KEY set on the site. Anyone with it can read and write this garage."
+        value={draft}
+        onChange={setDraft}
+        placeholder="paste your key"
+      />
+      <div className="btn-row">
+        <button
+          type="button"
+          className="btn btn--primary"
+          disabled={draft.trim() === sync.key}
+          onClick={() => sync.setKey(draft.trim() === '' ? null : draft.trim())}
+        >
+          {sync.key ? 'Update key' : 'Connect'}
+        </button>
+        {sync.key && (
+          <>
+            <button type="button" className="btn" onClick={sync.syncNow}>
+              Sync now
+            </button>
+            <button
+              type="button"
+              className="btn btn--danger"
+              onClick={() => {
+                setDraft('')
+                sync.setKey(null)
+              }}
+            >
+              Disconnect
+            </button>
+          </>
+        )}
+      </div>
+
+      <div style={{ marginTop: 12 }}>
+        <Readout label="Status" value={SYNC_LABELS[sync.state]} />
+        {sync.lastSyncedAt && (
+          <Readout label="Last synced" value={new Date(sync.lastSyncedAt).toLocaleTimeString()} />
+        )}
+      </div>
+      {sync.message && (
+        <div style={{ marginTop: 10 }}>
+          <Note tone={sync.state === 'unauthorised' ? 'bad' : 'warn'}>{sync.message}</Note>
+        </div>
+      )}
+      {sync.state === 'disabled' && (
+        <p className="muted" style={{ fontSize: 13, margin: '10px 0 0' }}>
+          Not connected. Everything still works — the log is kept in this browser, and you can
+          export a backup below.
+        </p>
+      )}
+    </Card>
+  )
+}
+
+const SYNC_LABELS: Record<Sync['state'], string> = {
+  disabled: 'On this device only',
+  offline: 'Offline — will sync later',
+  syncing: 'Syncing…',
+  synced: 'Synced',
+  unauthorised: 'Key rejected',
+  error: 'Sync failed',
 }
 
 /* ------------------------------------------------------------------ */

@@ -6,6 +6,7 @@ import { SessionView } from './views/SessionView'
 import { TrackDayDetailView, TrackDayListView } from './views/TrackDayView'
 import { TyreView } from './views/TyreView'
 import { useGarage } from './store'
+import { useSync, type SyncState } from './sync'
 
 type Route =
   | { view: 'days' }
@@ -24,6 +25,7 @@ const TABS = [
 
 export function App() {
   const garage = useGarage()
+  const sync = useSync(garage.data, garage.replace)
   const [route, setRoute] = useState<Route>({ view: 'days' })
 
   // Which tab lights up: a day and a session both belong to Track days.
@@ -35,6 +37,7 @@ export function App() {
       <header className="masthead">
         <div className="masthead__row">
           <h1 className="masthead__title">{titleFor(tab)}</h1>
+          <SyncBadge state={sync.state} />
         </div>
         <p className="masthead__sub">{subtitleFor(tab)}</p>
       </header>
@@ -92,10 +95,24 @@ export function App() {
         )}
         {route.view === 'sag' && <SagView garage={garage} />}
         {route.view === 'tyres' && <TyreView garage={garage} />}
-        {route.view === 'garage' && <GarageView garage={garage} />}
+        {route.view === 'garage' && <GarageView garage={garage} sync={sync} />}
       </main>
     </div>
   )
+}
+
+/** A word on whether the log has reached the server, and nothing more. */
+function SyncBadge({ state }: { state: SyncState }) {
+  if (state === 'disabled') return null
+  const look: Record<Exclude<SyncState, 'disabled'>, { tone: string; label: string }> = {
+    syncing: { tone: 'muted', label: 'Syncing…' },
+    synced: { tone: 'ok', label: 'Synced' },
+    offline: { tone: 'muted', label: 'Offline' },
+    unauthorised: { tone: 'bad', label: 'Key rejected' },
+    error: { tone: 'warn', label: 'Sync failed' },
+  }
+  const { tone, label } = look[state]
+  return <span className={`badge badge--${tone}`}>{label}</span>
 }
 
 function titleFor(tab: string): string {

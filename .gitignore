@@ -4,3 +4,13 @@ dist/
 *.local
 .DS_Store
 coverage/
+
+# Netlify build output and local state
+.netlify/
+
+# Local secrets, and the local SQLite database they point at
+.env
+.env.*
+!.env.example
+data/*.db
+data/*.db-*

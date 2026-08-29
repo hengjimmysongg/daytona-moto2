@@ -80,8 +80,16 @@ export function loadGarage(storage: StorageLike): { data: GarageData; error?: st
   }
 }
 
+/**
+ * Persist the document exactly as given.
+ *
+ * `updatedAt` is set by whoever made the change, not here. Re-stamping on
+ * the way to disk would leave the copy in memory and the copy on disk
+ * disagreeing about when the document last changed, and sync compares
+ * exactly that.
+ */
 export function saveGarage(storage: StorageLike, data: GarageData): { error?: string } {
-  const next: GarageData = { ...data, version: SCHEMA_VERSION, updatedAt: Date.now() }
+  const next: GarageData = { ...data, version: SCHEMA_VERSION }
   try {
     storage.setItem(STORAGE_KEY, JSON.stringify(next))
     return {}

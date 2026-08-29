@@ -7,15 +7,193 @@ It records what you ran, works out what to set next time, and — crucially —
 keeps track of **what changed between sessions**, because that is the only
 thing that makes a lap time mean anything.
 
+There are two halves: a browser app that keeps working with no network, and a
+small HTTP API over a SQLite database, so a log can be kept across devices and
+written to by anything that can send JSON.
+
 ```
 npm install
-npm run dev        # http://localhost:5173
-npm test           # 117 tests over the calculators
-npm run build      # static bundle in dist/
+npm run dev:netlify    # the whole site on http://localhost:8888
+npm test               # 159 tests
+npm run build          # static client into dist/
 ```
 
-Everything is stored in your browser on your own device. Nothing is uploaded,
-nothing needs an account, and the built bundle works offline.
+If `netlify dev` cannot start (it downloads a Deno runtime for edge functions,
+which this app does not use), run the two halves separately instead — the Vite
+dev server proxies `/api` to the functions server:
+
+```
+npm run dev:api        # functions + SQLite on :9999
+npm run dev            # client on :5173
+```
+
+Locally the database is a plain SQLite file at `./data/tracker.db`. You can
+open it with `sqlite3` while the app is running.
+
+---
+
+## Deploying to Netlify
+
+### The one constraint worth understanding
+
+A Netlify Function runs in a container that is thrown away, with a filesystem
+to match. A SQLite file written inside one is gone by the next request and
+invisible to every other instance running at the same time. So the file cannot
+live *in* the function.
+
+The fix is not to give up SQLite, it is to put it somewhere durable. [Turso]
+runs libSQL — SQLite, the same engine and the same SQL — and speaks it over
+HTTP. The application code does not change: the same driver reads a local file
+in development and a hosted database in production, chosen by a URL.
+
+[Turso]: https://turso.tech
+
+### Steps
+
+1. **Create the database.**
+
+   ```bash
+   npm i -g @tursodatabase/turso-cli   # or: brew install tursodatabase/tap/turso
+   turso auth signup
+   turso db create trackday
+   turso db show trackday --url        # → libsql://trackday-you.turso.io
+   turso db tokens create trackday     # → the auth token
+   ```
+
+2. **Create the site** — either connect this repository at
+   [app.netlify.com](https://app.netlify.com) → *Add new site → Import an
+   existing project*, or from the command line:
+
+   ```bash
+   npx netlify login
+   npx netlify init          # creates and links the site
+   ```
+
+   `netlify.toml` already has the build command, the publish directory and the
+   functions directory, so there is nothing to fill in.
+
+3. **Set the environment variables**, in *Site configuration → Environment
+   variables* or from the CLI:
+
+   ```bash
+   npx netlify env:set TURSO_DATABASE_URL "libsql://trackday-you.turso.io"
+   npx netlify env:set TURSO_AUTH_TOKEN   "…"
+   npx netlify env:set TRACKER_API_KEY    "$(openssl rand -base64 32)"
+   ```
+
+4. **Deploy.**
+
+   ```bash
+   npx netlify deploy --build --prod
+   ```
+
+5. **Check it, then connect the app.**
+
+   ```bash
+   curl https://your-site.netlify.app/api/health
+   ```
+
+   Open the site, go to **Garage → Sync**, and paste the `TRACKER_API_KEY`. The
+   browser stores it and syncs from then on.
+
+### Environment variables
+
+| Variable | Required | What it does |
+| --- | --- | --- |
+| `TRACKER_API_KEY` | on a deployment | The shared secret every `/api` call must present. Without it a **deployed** API refuses to serve at all; locally it is optional and the API is open. |
+| `TURSO_DATABASE_URL` | on a deployment | The libSQL database. Falls back to `file:./data/tracker.db`, which is only useful locally. |
+| `TURSO_AUTH_TOKEN` | on a deployment | Token for that database. |
+| `GARAGE_ID` | no | Which garage rows belong to. Defaults to `default`; set it to keep two separate logs in one database. |
+
+### About that key
+
+It is a shared secret, not an account system, and the README would rather say
+so than imply otherwise. Whoever holds it can read and write the garage,
+through the browser or through the API. That is a reasonable fit for one
+rider's log book and a bad fit for anything else. The deployed API fails
+closed when the key is missing, because the alternative — a writable database
+on a public URL — is worse than an app that will not start.
+
+---
+
+## The API
+
+Everything under `/api`, JSON in and JSON out, authenticated with
+`Authorization: Bearer $TRACKER_API_KEY`. `GET /api/health` needs no key and
+lists every route.
+
+**Units are canonical and not negotiable at this boundary**: pressures in
+**bar**, temperatures in **°C**, lengths and sag in **mm**, weight in **kg**.
+psi and °F are a browser display preference. A cold pressure of `31` is
+rejected with a message pointing out that 31 psi is about 2.14 bar.
+
+```bash
+API=https://your-site.netlify.app/api
+AUTH="Authorization: Bearer $TRACKER_API_KEY"
+
+# A bike needs only a name; the adjuster ranges and sag windows are filled in
+curl -X POST $API/bikes -H "$AUTH" -H 'content-type: application/json' \
+  -d '{"name":"Daytona 675R","make":"Triumph","riderWeightKg":82}'
+
+# The bike is inferred when the garage only has one
+curl -X POST $API/track-days -H "$AUTH" -H 'content-type: application/json' \
+  -d '{"circuit":"Daytona International Speedway","date":"2026-03-07"}'
+
+# A session is numbered automatically, after the last one on that day
+curl -X POST $API/sessions -H "$AUTH" -H 'content-type: application/json' \
+  -d '{
+    "trackDayId": "day_…",
+    "bestLap": 112.34,
+    "conditions": { "ambientTemp": 22, "trackTemp": 35, "condition": "dry" },
+    "setup": { "fork": { "compression": 12, "rebound": 10 } },
+    "tyres": { "front": { "coldPressure": 2.14, "hotPressure": 2.41 } },
+    "feedback": ["front-push-entry"]
+  }'
+
+curl "$API/sessions?trackDayId=day_…" -H "$AUTH"
+```
+
+| Route | Methods |
+| --- | --- |
+| `/api/health` | `GET` (no key) |
+| `/api/bikes`, `/api/bikes/:id` | `GET` `POST` · `GET` `PATCH` `DELETE` |
+| `/api/track-days`, `/api/track-days/:id` | `GET` `POST` · `GET` `PATCH` `DELETE` |
+| `/api/sessions`, `/api/sessions/:id` | `GET` `POST` · `GET` `PATCH` `DELETE` |
+| `/api/tyres`, `/api/tyres/:id` | `GET` `POST` · `GET` `PATCH` `DELETE` |
+| `/api/preferences` | `GET` `PUT` |
+| `/api/garage` | `GET` `PUT` — the whole document, used by the browser to sync |
+
+`PATCH` merges: a body naming one field leaves the rest alone. Deleting a
+track day deletes its sessions with it. `GET /api/sessions` takes an optional
+`?trackDayId=`.
+
+### How the browser and the server stay in step
+
+The app is local-first. Every edit is written to `localStorage` first, so a
+track day in a field with no signal works exactly as it always did; the server
+is somewhere the log is *also* kept. When there is a network and a key, the
+newer of the two documents wins whole.
+
+That is a blunt rule and it is the honest one for a single rider's log book:
+it is not a multi-writer merge, and two devices editing the same day at once
+will keep whichever synced last. A row inserted through the REST API is picked
+up by the browser on its next sync.
+
+### The schema is worth querying
+
+Every adjuster and every pressure is its own column, which is the point of
+putting a log book in a database rather than a JSON blob:
+
+```sql
+SELECT s.number, s.best_lap, s.fork_compression,
+       ROUND(s.front_hot - s.front_cold, 3) AS rise, d.circuit
+FROM sessions s JOIN track_days d ON d.id = s.track_day_id
+ORDER BY s.best_lap;
+```
+
+What stays as JSON is what nothing sorts or filters on: a bike's adjuster
+ranges, its sag windows, and the list of feedback codes, which is genuinely a
+list.
 
 ---
 
@@ -127,7 +305,7 @@ the hot pressure that matters is the one on your tyre's data sheet.
 ## Layout
 
 ```
-src/core/     the domain, with no UI in it
+src/core/     the domain, with no UI and no database in it
   units.ts      bar/psi/kPa, °C/°F, mm/in, kg/lb, and the canonical-unit rule
   types.ts      bikes, track days, sessions, tyres
   sag.ts        rider and free sag, spring-rate verdict, preload corrections
@@ -136,10 +314,18 @@ src/core/     the domain, with no UI in it
   advice.ts     the handling-complaint catalogue and how it is ranked
   laptime.ts    parsing and formatting `1:52.34`
   storage.ts    the persisted document, import and export
+src/server/   the API: Request in, Response out, no framework
+  db.ts         the libSQL connection and the schema
+  repository.ts rows to domain objects and back
+  validation.ts what the API accepts, and the defaults it fills in
+  router.ts     the routes and the bearer-token check
 src/data/     bike templates, circuits, tyre models — all editable defaults
-src/ui/       React views; the only layer that knows what unit you read in
-tests/        the calculators, the invertible conventions, the failure paths
+src/ui/       React views, plus the sync loop
+netlify/      the function, a thin adapter that only reads the environment
+tests/        the calculators, the API against a real in-memory SQLite,
+              the conventions that are easy to invert, and the failure paths
 ```
 
-The core has no React in it and takes its storage handle as an argument, so it
-runs under Node and is tested without a DOM.
+The core has no React and no SQL in it. The server takes a `Request` and
+returns a `Response` with its database handed in, so the whole API is tested
+against a real in-memory SQLite without a server running.

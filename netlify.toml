@@ -1,0 +1,27 @@
+# Netlify site configuration.
+#
+# Two halves: the Vite build produces the static client into `dist`, and the
+# function in `netlify/functions` serves `/api/*` from SQLite.
+
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+  # The libSQL client ships a native binary for local file databases, which
+  # esbuild cannot inline. Shipping it as a real node module instead lets the
+  # same code talk to a `file:` database in dev and a hosted one in production.
+  external_node_modules = ["@libsql/client"]
+
+# The client has no path-based routing, but a deep link or a refresh should
+# still land on the app rather than a 404. The API is matched first by the
+# function's own `path` config, so this never swallows it.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

@@ -6,6 +6,8 @@
   "description": "Track day suspension setting and tyre pressure tracker",
   "scripts": {
     "dev": "vite",
+    "dev:api": "netlify functions:serve --port 9999",
+    "dev:netlify": "netlify dev",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
@@ -13,10 +15,13 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@libsql/client": "^0.17.4",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "zod": "^4.5.2"
   },
   "devDependencies": {
+    "@netlify/functions": "^6.0.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^6.1.1",

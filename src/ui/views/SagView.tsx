@@ -137,14 +137,14 @@ function AxleSag({
       {result && (
         <>
           <Readout
-            label={`Rider sag · target ${window(result.riderSagTarget)}`}
+            label={`Rider sag · target ${formatWindow(result.riderSagTarget)}`}
             value={`${round(result.riderSag)} mm`}
             large
             trailing={<StatusBadge status={result.riderSagStatus} />}
           />
           {result.freeSag !== undefined && result.freeSagTarget && (
             <Readout
-              label={`Free sag · target ${window(result.freeSagTarget)}`}
+              label={`Free sag · target ${formatWindow(result.freeSagTarget)}`}
               value={`${round(result.freeSag)} mm`}
               trailing={<StatusBadge status={result.freeSagStatus ?? 'ok'} />}
             />
@@ -200,7 +200,9 @@ function toMeasurement(draft: Draft): SagMeasurement | null {
   return measurement
 }
 
-function window([min, max]: readonly [number, number]): string {
+/** Not named `window`: that shadows the global inside this module and
+ *  breaks anything that reaches for it, React Refresh included. */
+function formatWindow([min, max]: readonly [number, number]): string {
   return `${min}–${max} mm`
 }
 
