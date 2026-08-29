@@ -6,6 +6,8 @@
   "description": "Track day suspension setting and tyre pressure tracker",
   "scripts": {
     "dev": "vite",
+    "setup": "node scripts/setup-env.mjs",
+    "check:env": "node scripts/setup-env.mjs --check",
     "dev:api": "netlify functions:serve --port 9999",
     "dev:netlify": "netlify dev",
     "build": "tsc --noEmit && vite build",

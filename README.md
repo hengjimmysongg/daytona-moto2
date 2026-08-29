@@ -13,10 +13,16 @@ written to by anything that can send JSON.
 
 ```
 npm install
+npm run setup          # writes .env, generating the API key
 npm run dev:netlify    # the whole site on http://localhost:8888
 npm test               # 159 tests
 npm run build          # static client into dist/
 ```
+
+`npm run setup` is safe to re-run: it keeps every value already in `.env` and
+only fills in what is missing. It never prints a secret, only whether one is
+set. `npm run check:env` reports what is still needed and exits non-zero if
+anything is, which makes it usable in CI.
 
 If `netlify dev` cannot start (it downloads a Deno runtime for edge functions,
 which this app does not use), run the two halves separately instead — the Vite
@@ -72,14 +78,17 @@ in development and a hosted database in production, chosen by a URL.
    `netlify.toml` already has the build command, the publish directory and the
    functions directory, so there is nothing to fill in.
 
-3. **Set the environment variables**, in *Site configuration → Environment
-   variables* or from the CLI:
+3. **Set the environment variables.** `.env` is local-only and is never
+   uploaded, so the site needs its own copy. Put the Turso values into `.env`,
+   check it, then import the lot:
 
    ```bash
-   npx netlify env:set TURSO_DATABASE_URL "libsql://trackday-you.turso.io"
-   npx netlify env:set TURSO_AUTH_TOKEN   "…"
-   npx netlify env:set TRACKER_API_KEY    "$(openssl rand -base64 32)"
+   npm run check:env                 # says what is still missing
+   npx netlify env:import .env       # pushes them to the site
    ```
+
+   Or set them one at a time in *Site configuration → Environment variables*,
+   or with `npx netlify env:set NAME "value"`.
 
 4. **Deploy.**
 
