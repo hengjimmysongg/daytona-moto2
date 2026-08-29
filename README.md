@@ -99,11 +99,38 @@ in development and a hosted database in production, chosen by a URL.
 5. **Check it, then connect the app.**
 
    ```bash
-   curl https://your-site.netlify.app/api/health
+   npm run check:deploy https://your-site.netlify.app
    ```
 
-   Open the site, go to **Garage → Sync**, and paste the `TRACKER_API_KEY`. The
-   browser stores it and syncs from then on.
+   `curl .../api/health` is the tempting check and not a sufficient one: it
+   answers before the auth guard, so a site that was deployed and never given
+   its variables returns a healthy `200` there while every real request fails.
+   The script asks a data route instead, which distinguishes the states a
+   deploy actually lands in — guarded and working, missing `TRACKER_API_KEY`,
+   unable to reach the database, or serving the garage to anyone who asks.
+
+   Then open the site, go to **Garage → Sync**, and paste the
+   `TRACKER_API_KEY`. The browser stores it and syncs from then on.
+
+### Deploying from CI
+
+`.github/workflows/deploy.yml` does step 4 on every push, so it only has to
+happen by hand the first time. It needs two repository secrets, under
+*Settings → Secrets and variables → Actions*:
+
+| Secret | Where to find it |
+| --- | --- |
+| `NETLIFY_AUTH_TOKEN` | [app.netlify.com](https://app.netlify.com) → *User settings → Applications* |
+| `NETLIFY_SITE_ID` | *Site configuration → General → Site information* (the API ID) |
+
+A push to the default branch goes to production; any other branch gets its own
+preview URL. The test suite runs first either way, so a red test cannot deploy,
+and step 5 runs afterwards against the URL that was just deployed, so a deploy
+that uploaded cleanly but cannot serve fails the build rather than passing it.
+
+The variables below are deliberately *not* set by the workflow. They belong to
+the site rather than to the build — the function reads them at request time,
+long after the build has finished — so they stay in the Netlify UI.
 
 ### Environment variables
 

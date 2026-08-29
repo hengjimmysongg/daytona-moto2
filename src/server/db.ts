@@ -175,7 +175,13 @@ export async function migrate(db: Db): Promise<void> {
 /* Connection reuse                                                    */
 /* ------------------------------------------------------------------ */
 
-let cached: { db: Db; ready: Promise<void>; key: string } | null = null
+interface Cached {
+  db: Db
+  ready: Promise<void>
+  key: string
+}
+
+let cached: Cached | null = null
 
 /**
  * The database for this process, migrated once.
@@ -184,16 +190,34 @@ let cached: { db: Db; ready: Promise<void>; key: string } | null = null
  * and the one-off migration are held in module scope. The migration is
  * stored as a promise rather than a flag so that concurrent first requests
  * wait on the same run instead of racing to create the same tables.
+ *
+ * A *failed* migration is not kept. Against a local file that distinction
+ * never comes up, but the first request into a cold container runs the
+ * schema over the network, against a hosted database that may still be
+ * waking up — precisely the moment a call is most likely to fail. Caching
+ * that rejection would hand every later request the same stale error for as
+ * long as the container lives, leaving the site broken while the database is
+ * perfectly healthy. Dropping it costs one retry and cures itself.
  */
 export async function getDb(env: Record<string, string | undefined> = process.env): Promise<Db> {
   const config = readDbConfig(env)
   const key = `${config.url}|${config.authToken ?? ''}`
   if (!cached || cached.key !== key) {
     const db = createDb(config)
-    cached = { db, key, ready: migrate(db) }
+    const entry: Cached = { db, key, ready: Promise.resolve() }
+    // The rejection handler is attached after `entry` exists so it can
+    // recognise its own cache slot: by the time a failure lands, a later
+    // request may already have replaced it, and clearing someone else's
+    // connection would undo a recovery that has already succeeded.
+    entry.ready = migrate(db).catch((error: unknown) => {
+      if (cached === entry) cached = null
+      throw error
+    })
+    cached = entry
   }
-  await cached.ready
-  return cached.db
+  const active = cached
+  await active.ready
+  return active.db
 }
 
 /** Drop the cached connection. Tests use this; nothing else should need it. */

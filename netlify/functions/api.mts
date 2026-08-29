@@ -13,7 +13,27 @@ import { getDb } from '../../src/server/db'
 import { handleApiRequest } from '../../src/server/router'
 
 export default async function handler(request: Request): Promise<Response> {
-  const db = await getDb(process.env)
+  let db
+  try {
+    db = await getDb(process.env)
+  } catch (error) {
+    // A misconfigured or unreachable database is the likeliest thing to be
+    // wrong just after a deploy, and it is the one failure that happens
+    // before the router can turn anything into JSON. Left alone it surfaces
+    // as the host's opaque 500, which says nothing about what to fix. The
+    // detail goes to the function log, where the database URL and token are
+    // already visible to whoever can read it; the response says only that
+    // the database is the problem.
+    console.error('database unavailable', error)
+    return new Response(
+      JSON.stringify({
+        error:
+          'The database is unavailable. Check TURSO_DATABASE_URL and TURSO_AUTH_TOKEN in the site environment.',
+      }),
+      { status: 503, headers: { 'content-type': 'application/json; charset=utf-8' } },
+    )
+  }
+
   return handleApiRequest(request, {
     db,
     garageId: process.env.GARAGE_ID ?? 'default',
