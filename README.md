@@ -50,6 +50,22 @@ repo, neither gets in the other's way, and the application code is the same
 either side — each host gets a file that does nothing but say where it is
 running.
 
+### The simplest deployment has no database at all
+
+The client is local-first. Every edit is written to the browser, and the API
+only matters once you want the same log on a second device. So deploying with
+no database is a supported outcome rather than a broken one: leave
+`TURSO_DATABASE_URL` and `TRACKER_API_KEY` unset, deploy, and you get the
+whole app with its log kept in the browser. Nothing calls `/api`, because the
+browser only syncs once you hand it a key, and `/api` says it is unconfigured
+if anything else asks.
+
+What you give up is the log being in two places, and a log that lives in one
+browser is one cleared site setting away from gone — so **Garage → Export backup**
+is the backup, and worth doing after a track day.
+
+The rest of this section is for when you do want it in two places.
+
 ### The one constraint worth understanding
 
 A serverless function runs in a container that is thrown away, with a
