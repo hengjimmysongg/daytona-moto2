@@ -2,16 +2,14 @@
 /**
  * Set up .env for local development and for deploying.
  *
- * Creates the file if it is missing, keeps any value already in it, and
- * generates the one secret that does not come from somewhere else — the
- * API key, which is just a random string and may as well be a strong one.
+ * Creates the file if it is missing and keeps any value already in it, so it
+ * is safe to re-run.
  *
  * Values are never printed. A token that gets echoed into a terminal ends
  * up in scrollback, in shell history and in CI logs, so this prints only
  * whether each variable is set and how long it is.
  */
 
-import { randomBytes } from 'node:crypto'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -25,13 +23,6 @@ const checkOnly = process.argv.includes('--check')
 /** What each variable is for, and where to get it when it is missing. */
 const VARIABLES = [
   {
-    name: 'TRACKER_API_KEY',
-    need: 'deploy',
-    generate: () => randomBytes(32).toString('base64url'),
-    what: 'The shared secret every /api call must present.',
-    how: 'Generated for you.',
-  },
-  {
     name: 'TURSO_DATABASE_URL',
     need: 'deploy',
     what: 'The hosted SQLite database. Local dev falls back to ./data/tracker.db.',
@@ -42,12 +33,6 @@ const VARIABLES = [
     need: 'deploy',
     what: 'Token for that database.',
     how: 'turso db tokens create trackday',
-  },
-  {
-    name: 'GARAGE_ID',
-    need: 'optional',
-    what: 'Which garage rows belong to. Only worth setting for two logs in one database.',
-    how: 'Defaults to "default".',
   },
 ]
 
@@ -120,7 +105,7 @@ console.log('')
 if (missingForDeploy === 0) {
   console.log('Ready.')
   console.log('  Local     npm run dev:vercel        # or: npm run dev:netlify')
-  console.log('  Vercel    npx vercel env add TRACKER_API_KEY production   # once per variable')
+  console.log('  Vercel    npx vercel env add TURSO_DATABASE_URL production  # once per variable')
   console.log('            npx vercel deploy --prod')
   console.log('  Netlify   npx netlify env:import .env')
   console.log('            npx netlify deploy --build --prod')

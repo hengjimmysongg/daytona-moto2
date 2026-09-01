@@ -108,7 +108,7 @@ function SyncBadge({ state }: { state: SyncState }) {
     syncing: { tone: 'muted', label: 'Syncing…' },
     synced: { tone: 'ok', label: 'Synced' },
     offline: { tone: 'muted', label: 'Offline' },
-    unauthorised: { tone: 'bad', label: 'Key rejected' },
+    unauthorised: { tone: 'bad', label: 'Sign in again' },
     error: { tone: 'warn', label: 'Sync failed' },
   }
   const { tone, label } = look[state]

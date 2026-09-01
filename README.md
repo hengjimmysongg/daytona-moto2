@@ -13,7 +13,7 @@ written to by anything that can send JSON.
 
 ```
 npm install
-npm run setup          # writes .env, generating the API key
+npm run setup          # writes .env for the database, if you want one
 npm run dev            # the app on http://localhost:5173
 npm test               # 170 tests
 npm run build          # static client into dist/
@@ -55,10 +55,13 @@ running.
 The client is local-first. Every edit is written to the browser, and the API
 only matters once you want the same log on a second device. So deploying with
 no database is a supported outcome rather than a broken one: leave
-`TURSO_DATABASE_URL` and `TRACKER_API_KEY` unset, deploy, and you get the
-whole app with its log kept in the browser. Nothing calls `/api`, because the
-browser only syncs once you hand it a key, and `/api` says it is unconfigured
-if anything else asks.
+`TURSO_DATABASE_URL` unset, deploy, and you get the whole app with its log
+kept in the browser. Nothing calls `/api`, because the browser only syncs
+once somebody signs in, and `/api` says it is unconfigured if anything else
+asks.
+
+There are no accounts in that shape either, since there is nowhere to keep
+one. It is the app for one rider on one phone.
 
 What you give up is the log being in two places, and a log that lives in one
 browser is one cleared site setting away from gone — so **Garage → Export backup**
@@ -97,12 +100,12 @@ turso db tokens create trackday     # → the auth token
 Put both into `.env`, then check what is left:
 
 ```bash
-npm run setup        # generates TRACKER_API_KEY if it is missing
+npm run setup        # writes them into .env
 npm run check:env    # says what is still needed
 ```
 
 `.env` is local-only and is never uploaded, so the host needs its own copy of
-these three values. That is most of what step 2 is.
+these two values. That is most of what step 2 is.
 
 ### 2a. Vercel
 
@@ -114,7 +117,6 @@ npx vercel login
 npx vercel link                                    # creates and links the project
 npx vercel env add TURSO_DATABASE_URL production   # each reads its value from stdin
 npx vercel env add TURSO_AUTH_TOKEN production
-npx vercel env add TRACKER_API_KEY production
 npx vercel deploy --prod
 ```
 
@@ -142,43 +144,66 @@ npx netlify deploy --build --prod
 functions directory. Variables can also be set in *Site configuration →
 Environment variables*, or with `npx netlify env:set NAME "value"`.
 
-### 3. Check it, then connect the app
+### 3. Check it, then make an account
 
 ```bash
 curl https://your-deployment/api/health
 ```
 
-A healthy deployment answers `{"ok": true, …}` without a key. A misconfigured
-one answers 503 and says which variable is missing.
+A healthy deployment answers `{"ok": true, …}` without signing in. A
+misconfigured one answers 503 and says which variable is missing.
 
-Then open the site, go to **Garage → Sync**, and paste the `TRACKER_API_KEY`.
-The browser stores it and syncs from then on.
+Then open the site, go to **Garage → Account**, and create one. Signing up
+is free and open to anyone; the log on that device is adopted into the new
+account on the first sync.
 
 ### Environment variables
 
 | Variable | Required | What it does |
 | --- | --- | --- |
-| `TRACKER_API_KEY` | on a deployment | The shared secret every `/api` call must present. Without it a **deployed** API refuses to serve at all; locally it is optional and the API is open. |
 | `TURSO_DATABASE_URL` | on a deployment | The libSQL database. Falls back to `file:./data/tracker.db`, which is only useful locally — a deployment pointed at a file refuses to serve. |
 | `TURSO_AUTH_TOKEN` | on a deployment | Token for that database. |
-| `GARAGE_ID` | no | Which garage rows belong to. Defaults to `default`; set it to keep two separate logs in one database. |
 
-### About that key
+That is the whole list. There is no shared secret to distribute any more:
+who may read a garage is decided by who is signed in.
 
-It is a shared secret, not an account system, and the README would rather say
-so than imply otherwise. Whoever holds it can read and write the garage,
-through the browser or through the API. That is a reasonable fit for one
-rider's log book and a bad fit for anything else. The deployed API fails
-closed when the key is missing, because the alternative — a writable database
-on a public URL — is worse than an app that will not start.
+---
+
+## Accounts
+
+Anyone can sign up, and a rider's log is theirs. A user's id **is** their
+garage id, which is why nothing in the query layer had to change to make the
+log private: every table was already scoped by `garage_id`, and signing in
+is just deciding which one this request may touch.
+
+What that buys, and what it costs, stated plainly:
+
+- **Passwords** are never stored. What is stored is PBKDF2-HMAC-SHA256 over
+  the password, 210,000 rounds, salted per user, with the parameters written
+  alongside the hash so they can be raised later without invalidating
+  anybody's password.
+- **Tokens** are never stored either — only their SHA-256. A dump of
+  `auth_tokens` is a list of useless hashes, not a set of live sign-ins.
+  They last 90 days.
+- **A wrong password and an unknown address get the same answer**, so the
+  sign-in form cannot be used to ask which addresses have accounts here.
+- **Signup is open, and there is no rate limit.** That is what "anyone can
+  sign up" means, and it is worth knowing before the URL is shared widely:
+  nothing stops someone making accounts in bulk, and each signup costs a
+  tenth of a second of CPU by design. For a rider's log shared with friends
+  that is fine. For anything more public, put a rate limit in front of
+  `/api/auth/*` before you advertise it.
+- **An account is optional.** The app is local-first: it works with no
+  account at all, and signing in is what makes the log survive a lost phone
+  and turn up on the next device.
 
 ---
 
 ## The API
 
-Everything under `/api`, JSON in and JSON out, authenticated with
-`Authorization: Bearer $TRACKER_API_KEY`. `GET /api/health` needs no key and
-lists every route.
+Everything under `/api`, JSON in and JSON out. Sign in once and send the
+token it hands back as `Authorization: Bearer …`. `GET /api/health` needs no
+token and lists every route.
 
 **Units are canonical and not negotiable at this boundary**: pressures in
 **bar**, temperatures in **°C**, lengths and sag in **mm**, weight in **kg**.
@@ -187,7 +212,12 @@ rejected with a message pointing out that 31 psi is about 2.14 bar.
 
 ```bash
 API=https://your-deployment/api
-AUTH="Authorization: Bearer $TRACKER_API_KEY"
+
+# Sign up once (or /login if you already have an account); keep the token
+TOKEN=$(curl -s -X POST $API/auth/signup -H 'content-type: application/json' \
+  -d '{"email":"you@example.com","password":"correct horse battery"}' \
+  | sed -n 's/.*"token": "\([^"]*\)".*/\1/p')
+AUTH="Authorization: Bearer $TOKEN"
 
 # A bike needs only a name; the adjuster ranges and sag windows are filled in
 curl -X POST $API/bikes -H "$AUTH" -H 'content-type: application/json' \
@@ -213,7 +243,9 @@ curl "$API/sessions?trackDayId=day_…" -H "$AUTH"
 
 | Route | Methods |
 | --- | --- |
-| `/api/health` | `GET` (no key) |
+| `/api/health` | `GET` (no token) |
+| `/api/auth/signup`, `/api/auth/login` | `POST` (no token) — `{email, password}` → `{token, expiresAt, user}` |
+| `/api/auth/me`, `/api/auth/logout` | `GET` · `POST` |
 | `/api/bikes`, `/api/bikes/:id` | `GET` `POST` · `GET` `PATCH` `DELETE` |
 | `/api/track-days`, `/api/track-days/:id` | `GET` `POST` · `GET` `PATCH` `DELETE` |
 | `/api/sessions`, `/api/sessions/:id` | `GET` `POST` · `GET` `PATCH` `DELETE` |
@@ -300,6 +332,16 @@ by guessing.
 **Tyre life.** Track each carcass rather than each model, and "how many
 sessions on this front?" becomes answerable.
 
+**Exports.** A session, a whole track day, or the season, as CSV — one row
+per session, every recorded data point a column, in the units you set. That
+is the shape that sorts and filters, which is how you find out what the
+quick sessions had in common. **Garage → Export backup** is the other kind:
+the whole document as JSON, to import somewhere else.
+
+**Accounts.** Free, optional and open to anyone. The log lives in the
+browser first and works with no account at all; signing in is what makes it
+the same log on the next device, and what makes it survive a lost phone.
+
 ---
 
 ## Conventions
@@ -372,11 +414,14 @@ src/core/     the domain, with no UI and no database in it
   advice.ts     the handling-complaint catalogue and how it is ranked
   laptime.ts    parsing and formatting `1:52.34`
   storage.ts    the persisted document, import and export
+  csv.ts        the log as a sheet: one row per session, in the rider's units
 src/server/   the API: Request in, Response out, no framework
   db.ts         the libSQL connection and the schema
   repository.ts rows to domain objects and back
   validation.ts what the API accepts, and the defaults it fills in
-  router.ts     the routes and the bearer-token check
+  auth.ts       password hashing and session tokens, over Web Crypto
+  accounts.ts   users and tokens in the database; a user id is a garage id
+  router.ts     the routes, and which garage this request may touch
   handler.ts    the API minus the host: environment, database, refusals
 src/data/     bike templates, circuits, tyre models — all editable defaults
 src/ui/       React views, plus the sync loop

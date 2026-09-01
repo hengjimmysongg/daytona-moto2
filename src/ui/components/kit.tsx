@@ -94,6 +94,8 @@ export function TextField({
   onChange,
   placeholder,
   list,
+  type = 'text',
+  autoComplete,
 }: {
   label: string
   hint?: string
@@ -101,16 +103,24 @@ export function TextField({
   onChange: (value: string) => void
   placeholder?: string
   list?: string
+  type?: 'text' | 'email' | 'password'
+  /**
+   * Worth setting on anything a password manager should fill. This is used
+   * in gloves, on a phone, in a paddock — the keyboard the type picks and
+   * the autofill the hint unlocks are not cosmetic there.
+   */
+  autoComplete?: string
 }) {
   return (
     <Field label={label} {...(hint ? { hint } : {})}>
       {(control) => (
         <input
           {...control}
-          type="text"
+          type={type}
           value={value}
           placeholder={placeholder ?? ''}
           {...(list ? { list } : {})}
+          {...(autoComplete ? { autoComplete } : {})}
           onChange={(event) => onChange(event.target.value)}
         />
       )}

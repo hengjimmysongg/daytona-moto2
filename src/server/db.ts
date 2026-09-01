@@ -80,6 +80,26 @@ export async function createDb(config: DbConfig): Promise<Db> {
  * Every row is scoped by `garage_id`, which is the unit of ownership.
  */
 const SCHEMA = [
+  // Accounts. A user's id *is* their garage id, so every table below is
+  // already scoped to its owner and nothing else had to change to make the
+  // log private per person.
+  `CREATE TABLE IF NOT EXISTS users (
+     id            TEXT PRIMARY KEY,
+     email         TEXT NOT NULL UNIQUE,
+     password_hash TEXT NOT NULL,
+     created_at    INTEGER NOT NULL
+   )`,
+
+  // The token itself is never here — only its SHA-256 — so a dump of this
+  // table cannot be replayed as a set of live sign-ins.
+  `CREATE TABLE IF NOT EXISTS auth_tokens (
+     token_hash TEXT PRIMARY KEY,
+     user_id    TEXT NOT NULL,
+     created_at INTEGER NOT NULL,
+     expires_at INTEGER NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS auth_tokens_user ON auth_tokens (user_id)`,
+
   `CREATE TABLE IF NOT EXISTS bikes (
      id              TEXT PRIMARY KEY,
      garage_id       TEXT NOT NULL,

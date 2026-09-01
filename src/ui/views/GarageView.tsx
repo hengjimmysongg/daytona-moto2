@@ -11,7 +11,9 @@ import {
   SelectField,
   TextField,
 } from '../components/kit'
-import { fmtMass, pressureFromInput, pressureInputValue } from '../format'
+import { fmtMass, pressureFromInput, pressureInputValue, todayIso } from '../format'
+import { downloadCsv, downloadFile } from '../download'
+import { csvFilename, garageCsv } from '../../core/csv'
 import { exportGarage, importGarage, suggestExportFilename } from '../../core/storage'
 import { massFromKg, massToKg } from '../../core/units'
 import { BIKE_TEMPLATES } from '../../data/presets'
@@ -108,7 +110,7 @@ export function GarageView({ garage, sync }: { garage: Garage; sync: Sync }) {
         onChange={(preferences) => update((current) => ({ ...current, preferences }))}
       />
 
-      <SyncCard sync={sync} />
+      <AccountCard sync={sync} />
 
       <DataCard data={data} onReplace={replace} />
     </>
@@ -120,70 +122,123 @@ export function GarageView({ garage, sync }: { garage: Garage; sync: Sync }) {
 /**
  * The server side of the log.
  *
- * The key is the whole access control story for this deployment, so it is
- * stated plainly rather than dressed up as a login: whoever has it can read
- * and write this garage, through the browser or through the API.
+ * An account is offered, never demanded. The app is local-first and the
+ * paddock has no signal, so signing in is what makes the log survive a lost
+ * phone and turn up on the next device — not what makes it work.
  */
-function SyncCard({ sync }: { sync: Sync }) {
-  const [draft, setDraft] = useState(sync.key ?? '')
+function AccountCard({ sync }: { sync: Sync }) {
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [mode, setMode] = useState<'signup' | 'signin'>('signup')
 
-  return (
-    <Card
-      title="Sync"
-      hint="Your log is saved on this device first and copied to the server when there is a signal. Without a key it stays on this device only."
-    >
-      <TextField
-        label="API key"
-        hint="The TRACKER_API_KEY set on the site. Anyone with it can read and write this garage."
-        value={draft}
-        onChange={setDraft}
-        placeholder="paste your key"
-      />
-      <div className="btn-row">
-        <button
-          type="button"
-          className="btn btn--primary"
-          disabled={draft.trim() === sync.key}
-          onClick={() => sync.setKey(draft.trim() === '' ? null : draft.trim())}
-        >
-          {sync.key ? 'Update key' : 'Connect'}
-        </button>
-        {sync.key && (
-          <>
-            <button type="button" className="btn" onClick={sync.syncNow}>
-              Sync now
-            </button>
-            <button
-              type="button"
-              className="btn btn--danger"
-              onClick={() => {
-                setDraft('')
-                sync.setKey(null)
-              }}
-            >
-              Disconnect
-            </button>
-          </>
-        )}
-      </div>
+  const submit = async () => {
+    const address = email.trim()
+    if (address === '' || password === '') return
+    const ok = mode === 'signup' ? await sync.signUp(address, password) : await sync.signIn(address, password)
+    // Never leave a password sitting in a form field on a phone that gets
+    // handed around a paddock.
+    if (ok) {
+      setEmail('')
+      setPassword('')
+    } else {
+      setPassword('')
+    }
+  }
 
-      <div style={{ marginTop: 12 }}>
+  if (sync.account) {
+    return (
+      <Card
+        title="Account"
+        hint="Your log is saved on this device first and copied to your account when there is a signal."
+      >
+        <Readout label="Signed in as" value={sync.account.email} />
         <Readout label="Status" value={SYNC_LABELS[sync.state]} />
         {sync.lastSyncedAt && (
           <Readout label="Last synced" value={new Date(sync.lastSyncedAt).toLocaleTimeString()} />
         )}
+
+        {sync.message && (
+          <div style={{ marginTop: 10 }}>
+            <Note tone={sync.state === 'unauthorised' ? 'bad' : 'warn'}>{sync.message}</Note>
+          </div>
+        )}
+
+        <div className="btn-row" style={{ marginTop: 14 }}>
+          <button type="button" className="btn" onClick={sync.syncNow}>
+            Sync now
+          </button>
+          <button type="button" className="btn btn--danger" onClick={sync.signOut}>
+            Sign out
+          </button>
+        </div>
+        <p className="muted" style={{ fontSize: 13, margin: '10px 0 0' }}>
+          Signing out leaves this device’s copy of the log alone. It stays here.
+        </p>
+      </Card>
+    )
+  }
+
+  return (
+    <Card
+      title="Account"
+      hint="Free, and only needed to keep the log across devices. Everything works without one — the log is kept in this browser."
+    >
+      <div className="btn-row" style={{ marginBottom: 12 }}>
+        <button
+          type="button"
+          className={mode === 'signup' ? 'btn btn--primary' : 'btn'}
+          aria-pressed={mode === 'signup'}
+          onClick={() => setMode('signup')}
+        >
+          Create account
+        </button>
+        <button
+          type="button"
+          className={mode === 'signin' ? 'btn btn--primary' : 'btn'}
+          aria-pressed={mode === 'signin'}
+          onClick={() => setMode('signin')}
+        >
+          Sign in
+        </button>
       </div>
-      {sync.message && (
-        <div style={{ marginTop: 10 }}>
-          <Note tone={sync.state === 'unauthorised' ? 'bad' : 'warn'}>{sync.message}</Note>
+
+      <TextField
+        label="Email"
+        type="email"
+        autoComplete="email"
+        value={email}
+        onChange={setEmail}
+        placeholder="you@example.com"
+      />
+      <TextField
+        label="Password"
+        type="password"
+        autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+        {...(mode === 'signup' ? { hint: 'At least 8 characters.' } : {})}
+        value={password}
+        onChange={setPassword}
+        placeholder="••••••••"
+      />
+
+      {sync.authError && (
+        <div style={{ marginBottom: 10 }}>
+          <Note tone="bad">{sync.authError}</Note>
         </div>
       )}
-      {sync.state === 'disabled' && (
-        <p className="muted" style={{ fontSize: 13, margin: '10px 0 0' }}>
-          Not connected. Everything still works — the log is kept in this browser, and you can
-          export a backup below.
-        </p>
-      )}
+
+      <button
+        type="button"
+        className="btn btn--primary btn--block"
+        disabled={sync.signingIn || email.trim() === '' || password === ''}
+        onClick={() => void submit()}
+      >
+        {sync.signingIn ? 'Working…' : mode === 'signup' ? 'Create account' : 'Sign in'}
+      </button>
+
+      <p className="muted" style={{ fontSize: 13, margin: '10px 0 0' }}>
+        Not signed in. Everything still works — the log is kept in this browser, and you can export
+        a backup below.
+      </p>
     </Card>
   )
 }
@@ -193,7 +248,7 @@ const SYNC_LABELS: Record<Sync['state'], string> = {
   offline: 'Offline — will sync later',
   syncing: 'Syncing…',
   synced: 'Synced',
-  unauthorised: 'Key rejected',
+  unauthorised: 'Signed out — sign in again',
   error: 'Sync failed',
 }
 
@@ -297,13 +352,11 @@ function DataCard({
   const [message, setMessage] = useState<{ tone: 'ok' | 'bad'; text: string } | null>(null)
 
   const download = () => {
-    const blob = new Blob([exportGarage(data)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = suggestExportFilename()
-    anchor.click()
-    URL.revokeObjectURL(url)
+    downloadFile(exportGarage(data), suggestExportFilename(), 'application/json')
+  }
+
+  const downloadSheet = () => {
+    downloadCsv(garageCsv(data), csvFilename(['track-day-log', todayIso()]))
   }
 
   return (
@@ -328,6 +381,9 @@ function DataCard({
         </button>
         <button type="button" className="btn" onClick={() => fileInput.current?.click()}>
           Import backup
+        </button>
+        <button type="button" className="btn" onClick={downloadSheet} disabled={data.sessions.length === 0}>
+          Every session (CSV)
         </button>
       </div>
       <p className="muted" style={{ fontSize: 13, marginTop: 10, marginBottom: 0 }}>

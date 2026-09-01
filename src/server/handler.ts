@@ -3,19 +3,20 @@
  *
  * Netlify and Vercel both hand a function a `Request` and want a `Response`
  * back, so everything an adapter does either side of that — read the
- * environment, refuse to run without a database, open one, name the garage —
- * is the same work written twice. It lives here instead, and each adapter is
- * left with the one thing only it can know: whether this is a developer's
- * own machine or a deployment.
+ * environment, refuse to run without a database, open one — is the same
+ * work written twice. It lives here instead, and each adapter is left with
+ * the one thing only it can know: whether this is a developer's own machine
+ * or a deployment.
  */
 
 import { getDb, isRemoteUrl, readDbConfig } from './db.js'
-import { checkApiKeyConfigured, handleApiRequest, json } from './router.js'
+import { handleApiRequest, json } from './router.js'
 
 export interface HostContext {
   /**
    * True on a developer's own machine, false on a deployment. It decides
-   * whether a missing API key is a convenience or a refusal to serve, so an
+   * only whether a SQLite file counts as a database: on a laptop it is one,
+   * on a serverless host it is a filesystem about to be thrown away. An
    * adapter that cannot tell should say false.
    */
   isLocal: boolean
@@ -43,18 +44,6 @@ export async function serveApiRequest(request: Request, host: HostContext): Prom
     )
   }
 
-  const apiKey = env.TRACKER_API_KEY
-  // Asked before the connection is opened, not after: a deployment missing
-  // its key will refuse every request anyway, and an unauthenticated caller
-  // should not be able to make it dial a database to be told so.
-  const unconfigured = checkApiKeyConfigured({ apiKey, isLocal: host.isLocal })
-  if (unconfigured) return unconfigured
-
   const db = await getDb(env)
-  return handleApiRequest(request, {
-    db,
-    garageId: env.GARAGE_ID ?? 'default',
-    apiKey,
-    isLocal: host.isLocal,
-  })
+  return handleApiRequest(request, { db })
 }

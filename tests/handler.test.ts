@@ -67,57 +67,49 @@ describe('a deployment with nothing configured', () => {
     expect(response.status).toBe(503)
   })
 
-  it('refuses to serve a database it has but no key for', async () => {
+  it('refuses to serve a database it has, when the file is the deployment’s own', async () => {
     const response = await serveApiRequest(get('/api/health'), {
       isLocal: false,
-      env: { TURSO_DATABASE_URL: 'libsql://x.turso.io' },
+      env: { TURSO_DATABASE_URL: 'file:./data/tracker.db' },
     })
-    // The key check comes first, so this never opens the connection.
     expect(response.status).toBe(503)
-    expect((await response.json()).error).toContain('TRACKER_API_KEY')
   })
 })
 
 describe('a developer machine', () => {
-  it('serves an open API from a local database', async () => {
+  it('serves a local file database, and asks who is calling', async () => {
     const response = await serveApiRequest(get('/api/bikes'), { isLocal: true, env: MEMORY })
+    // Open to reach, closed to read: the log belongs to an account.
+    expect(response.status).toBe(401)
+    expect((await response.json()).error).toMatch(/sign in/i)
+  })
+
+  it('answers the health check without an account', async () => {
+    const response = await serveApiRequest(get('/api/health'), { isLocal: true, env: MEMORY })
     expect(response.status).toBe(200)
-    expect(await response.json()).toEqual([])
+    expect((await response.json()).ok).toBe(true)
   })
 
-  it('still enforces a key once one is set', async () => {
-    const env = { ...MEMORY, TRACKER_API_KEY: 'local-key' }
-    expect((await serveApiRequest(get('/api/bikes'), { isLocal: true, env })).status).toBe(401)
-    const allowed = await serveApiRequest(
-      get('/api/bikes', { authorization: 'Bearer local-key' }),
-      { isLocal: true, env },
-    )
-    expect(allowed.status).toBe(200)
-  })
-})
+  it('signs a rider up and then serves the log that belongs to them', async () => {
+    const host = { isLocal: true, env: MEMORY }
 
-describe('GARAGE_ID', () => {
-  it('keeps two logs apart in one database', async () => {
     const created = await serveApiRequest(
-      new Request('https://example.test/api/bikes', {
+      new Request('https://example.test/api/auth/signup', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: 'Daytona 675R' }),
+        body: JSON.stringify({ email: 'rider@example.test', password: 'correct horse battery' }),
       }),
-      { isLocal: true, env: { ...MEMORY, GARAGE_ID: 'mine' } },
+      host,
     )
     expect(created.status).toBe(201)
+    const { token, user } = await created.json()
+    expect(user.email).toBe('rider@example.test')
 
-    const mine = await serveApiRequest(get('/api/bikes'), {
-      isLocal: true,
-      env: { ...MEMORY, GARAGE_ID: 'mine' },
-    })
-    expect((await mine.json()).map((bike: { name: string }) => bike.name)).toEqual(['Daytona 675R'])
-
-    const theirs = await serveApiRequest(get('/api/bikes'), {
-      isLocal: true,
-      env: { ...MEMORY, GARAGE_ID: 'theirs' },
-    })
-    expect(await theirs.json()).toEqual([])
+    const bikes = await serveApiRequest(
+      get('/api/bikes', { authorization: `Bearer ${token}` }),
+      host,
+    )
+    expect(bikes.status).toBe(200)
+    expect(await bikes.json()).toEqual([])
   })
 })

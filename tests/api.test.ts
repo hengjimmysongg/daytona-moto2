@@ -1,40 +1,56 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { createDb, migrate, type Db } from '../src/server/db'
 import { handleApiRequest, type ApiDeps } from '../src/server/router'
-import { getSnapshot } from '../src/server/repository'
 
-const KEY = 'test-key-1234567890'
+const EMAIL = 'rider@example.test'
+const PASSWORD = 'correct horse battery'
 
 let db: Db
+/** The signed-in rider every test below acts as. */
+let token: string
 
 beforeEach(async () => {
   // A real SQLite database, in memory: same engine and same SQL as the
   // deployed one, so the schema is genuinely exercised.
   db = await createDb({ url: ':memory:' })
   await migrate(db)
+  token = await signUp(EMAIL, PASSWORD)
 })
 
 function deps(overrides: Partial<ApiDeps> = {}): ApiDeps {
-  return { db, garageId: 'default', apiKey: KEY, now: () => 1_700_000_000_000, ...overrides }
+  return { db, now: () => 1_700_000_000_000, ...overrides }
 }
 
+async function send(
+  method: string,
+  path: string,
+  body?: unknown,
+  headers: Record<string, string> = {},
+): Promise<{ status: number; body: any }> {
+  const request = new Request(`https://example.test${path}`, {
+    method,
+    headers: { 'content-type': 'application/json', ...headers },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  })
+  const response = await handleApiRequest(request, deps())
+  const text = await response.text()
+  return { status: response.status, body: text ? JSON.parse(text) : null }
+}
+
+async function signUp(email: string, password: string): Promise<string> {
+  const created = await send('POST', '/api/auth/signup', { email, password })
+  expect(created.status, JSON.stringify(created.body)).toBe(201)
+  return created.body.token as string
+}
+
+/** Every garage call below is made as the signed-in rider. */
 async function call(
   method: string,
   path: string,
   body?: unknown,
-  overrides: Partial<ApiDeps> = {},
+  as: string = token,
 ): Promise<{ status: number; body: any }> {
-  const request = new Request(`https://example.test${path}`, {
-    method,
-    headers: {
-      authorization: `Bearer ${overrides.apiKey === null ? '' : KEY}`,
-      'content-type': 'application/json',
-    },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  })
-  const response = await handleApiRequest(request, deps(overrides))
-  const text = await response.text()
-  return { status: response.status, body: text ? JSON.parse(text) : null }
+  return send(method, path, body, { authorization: `Bearer ${as}` })
 }
 
 async function seedBike(name = 'Daytona 675R') {
@@ -63,44 +79,24 @@ describe('health', () => {
 })
 
 describe('auth', () => {
-  it('rejects a request with no key', async () => {
-    const response = await handleApiRequest(new Request('https://example.test/api/bikes'), deps())
+  it('rejects a request with no token', async () => {
+    const response = await send('GET', '/api/bikes')
     expect(response.status).toBe(401)
+    expect(response.body.error).toMatch(/sign in/i)
   })
 
-  it('rejects a wrong key', async () => {
-    const response = await handleApiRequest(
-      new Request('https://example.test/api/bikes', {
-        headers: { authorization: 'Bearer nope' },
-      }),
-      deps(),
-    )
-    expect(response.status).toBe(401)
+  it('rejects a token that was never issued', async () => {
+    expect((await call('GET', '/api/bikes', undefined, 'nope')).status).toBe(401)
   })
 
-  it('accepts the key as a query parameter, for a quick browser check', async () => {
-    const response = await handleApiRequest(
-      new Request(`https://example.test/api/bikes?key=${KEY}`),
-      deps(),
-    )
+  it('accepts the token as a query parameter, for a quick browser check', async () => {
+    const response = await send('GET', `/api/bikes?key=${token}`)
     expect(response.status).toBe(200)
   })
 
-  it('refuses to serve a deployment that has no key configured', async () => {
-    const response = await handleApiRequest(
-      new Request('https://example.test/api/bikes'),
-      deps({ apiKey: undefined, isLocal: false }),
-    )
-    expect(response.status).toBe(503)
-    expect((await response.json()).error).toMatch(/TRACKER_API_KEY/)
-  })
-
-  it('is open on a developer’s own machine', async () => {
-    const response = await handleApiRequest(
-      new Request('https://example.test/api/bikes'),
-      deps({ apiKey: undefined, isLocal: true }),
-    )
-    expect(response.status).toBe(200)
+  it('tells a caller how to sign in rather than just refusing', async () => {
+    const response = await send('GET', '/api/sessions')
+    expect(response.body.error).toContain('/api/auth/login')
   })
 })
 
@@ -358,16 +354,21 @@ describe('garage snapshot', () => {
 })
 
 describe('garage isolation', () => {
-  it('keeps one garage’s rows out of another', async () => {
+  it('keeps one rider’s log out of another’s', async () => {
     await seedBike('mine')
-    const other = await handleApiRequest(
-      new Request('https://example.test/api/bikes', {
-        headers: { authorization: `Bearer ${KEY}` },
-      }),
-      deps({ garageId: 'someone-else' }),
-    )
-    expect(await other.json()).toEqual([])
-    expect((await getSnapshot(db, 'default')).bikes).toHaveLength(1)
+    const theirs = await signUp('someone-else@example.test', 'a different password')
+
+    expect((await call('GET', '/api/bikes', undefined, theirs)).body).toEqual([])
+    expect((await call('GET', '/api/bikes')).body).toHaveLength(1)
+  })
+
+  it('will not let a signed-in rider reach another’s row by id', async () => {
+    const bikeId = await seedBike('mine')
+    const theirs = await signUp('someone-else@example.test', 'a different password')
+
+    expect((await call('GET', `/api/bikes/${bikeId}`, undefined, theirs)).status).toBe(404)
+    expect((await call('DELETE', `/api/bikes/${bikeId}`, undefined, theirs)).status).toBe(404)
+    expect((await call('GET', `/api/bikes/${bikeId}`)).status).toBe(200)
   })
 })
 
@@ -396,7 +397,7 @@ describe('routing', () => {
     const response = await handleApiRequest(
       new Request('https://example.test/api/bikes', {
         method: 'POST',
-        headers: { authorization: `Bearer ${KEY}`, 'content-type': 'application/json' },
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
         body: '{ not json',
       }),
       deps(),

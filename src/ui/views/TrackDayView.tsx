@@ -6,6 +6,8 @@ import { newId } from '../../core/id'
 import { diffSetups, summariseDiff } from '../../core/setup'
 import { pressureRise } from '../../core/tyres'
 import { sessionsForDay, trackDaysByDate } from '../../core/storage'
+import { csvFilename, trackDayCsv } from '../../core/csv'
+import { downloadCsv } from '../download'
 import { CIRCUITS } from '../../data/presets'
 import type { GarageData, Session, TrackDay } from '../../core/types'
 import type { Garage } from '../store'
@@ -294,6 +296,17 @@ export function TrackDayDetailView({
             />
           )}
         </Field>
+
+        <div className="btn-row" style={{ marginTop: 14, marginBottom: 14 }}>
+          <button
+            type="button"
+            className="btn btn--sm"
+            disabled={sessions.length === 0}
+            onClick={() => downloadCsv(trackDayCsv(data, day.id), csvFilename([day.date, day.circuit]))}
+          >
+            Export day (CSV)
+          </button>
+        </div>
 
         {confirmingDelete ? (
           <>

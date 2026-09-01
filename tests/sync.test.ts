@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { decideSync, isGarageEmpty, sideOf } from '../src/ui/sync'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { decideSync, isGarageEmpty, readStoredAccount, sideOf } from '../src/ui/sync'
 import { createEmptyGarage } from '../src/core/storage'
 import type { GarageData } from '../src/core/types'
 
@@ -67,5 +67,49 @@ describe('decideSync', () => {
 describe('sideOf', () => {
   it('reads the stamp and the emptiness off a document', () => {
     expect(sideOf(garage({ updatedAt: 42 }))).toEqual({ updatedAt: 42, isEmpty: true })
+  })
+})
+
+/* ------------------------------------------------------------------ */
+
+describe('the stored account', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  function withStorage(value: string | null): void {
+    vi.stubGlobal('localStorage', {
+      getItem: () => value,
+      setItem: () => undefined,
+      removeItem: () => undefined,
+    })
+  }
+
+  it('reads back what was signed in', () => {
+    withStorage(JSON.stringify({ email: 'rider@example.test', token: 'tok' }))
+    expect(readStoredAccount()).toEqual({ email: 'rider@example.test', token: 'tok' })
+  })
+
+  it('treats nothing stored as signed out', () => {
+    withStorage(null)
+    expect(readStoredAccount()).toBeNull()
+  })
+
+  it('treats a corrupt or half-written value as signed out, rather than wedging', () => {
+    withStorage('not json at all')
+    expect(readStoredAccount()).toBeNull()
+    withStorage(JSON.stringify({ email: 'rider@example.test' }))
+    expect(readStoredAccount()).toBeNull()
+    withStorage(JSON.stringify({ token: 42, email: 'rider@example.test' }))
+    expect(readStoredAccount()).toBeNull()
+  })
+
+  it('treats storage that throws as signed out', () => {
+    vi.stubGlobal('localStorage', {
+      getItem: () => {
+        throw new Error('denied')
+      },
+    })
+    expect(readStoredAccount()).toBeNull()
   })
 })

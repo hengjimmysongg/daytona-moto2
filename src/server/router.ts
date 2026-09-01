@@ -12,6 +12,15 @@
 import { z } from 'zod'
 import type { Db } from './db.js'
 import {
+  authenticate,
+  createUser,
+  issueToken,
+  revokeToken,
+  userForToken,
+  type User,
+} from './accounts.js'
+import { checkCredentialLimits, checkCredentials, normaliseEmail } from './auth.js'
+import {
   deleteRow,
   deleteTrackDayCascade,
   getBike,
@@ -33,6 +42,7 @@ import {
 } from './repository.js'
 import {
   bikeInput,
+  credentialsInput,
   buildBike,
   buildSession,
   buildTrackDay,
@@ -48,16 +58,18 @@ import type { GarageData } from '../core/types.js'
 
 export interface ApiDeps {
   db: Db
-  garageId: string
-  /** The shared secret callers must present. */
-  apiKey?: string | undefined
-  /**
-   * True on a developer's own machine. Without a key configured, a local
-   * server is open and a deployed one refuses to serve — failing closed,
-   * because the alternative is a writable database on a public URL.
-   */
-  isLocal?: boolean
   now?: () => number
+}
+
+/**
+ * One request's reach: the database, and whose garage it is allowed to
+ * touch. Every route below takes this rather than the raw request context,
+ * so there is no path through the API that can read a garage without first
+ * having been told which one.
+ */
+export interface Scope {
+  db: Db
+  garageId: string
 }
 
 const JSON_HEADERS = {
@@ -93,16 +105,6 @@ function fail(status: number, error: string, extra: Record<string, unknown> = {}
 /* Auth                                                                */
 /* ------------------------------------------------------------------ */
 
-/** Compare without leaking how much of the key matched via timing. */
-function secretsMatch(a: string, b: string): boolean {
-  if (a.length !== b.length) return false
-  let difference = 0
-  for (let index = 0; index < a.length; index += 1) {
-    difference |= a.charCodeAt(index) ^ b.charCodeAt(index)
-  }
-  return difference === 0
-}
-
 function bearer(request: Request): string | null {
   const header = request.headers.get('authorization')
   if (header?.startsWith('Bearer ')) return header.slice(7).trim()
@@ -114,33 +116,22 @@ function bearer(request: Request): string | null {
 }
 
 /**
- * The refusal a deployment with no key configured gets, whatever it asked
- * for.
+ * The account this request is signed in as, if any.
  *
- * Exported because it depends on nothing but the environment, which lets a
- * host adapter send it before opening a database that a caller holding no
- * key has no business making it open.
+ * Every garage route needs one, which is what makes the log private: a
+ * request carries a token, a token names a user, and a user's id is the
+ * garage id every query is scoped by.
  */
-export function checkApiKeyConfigured(deps: Pick<ApiDeps, 'apiKey' | 'isLocal'>): Response | null {
-  if (deps.apiKey || deps.isLocal) return null
-  return fail(
-    503,
-    'This deployment has no API key configured, so it will not serve data. ' +
-      "Set TRACKER_API_KEY in the deployment's environment and redeploy.",
-  )
+async function signedInUser(request: Request, db: Db, now: number): Promise<User | undefined> {
+  const token = bearer(request)
+  return token ? userForToken(db, token, now) : undefined
 }
 
-function checkAuth(request: Request, deps: ApiDeps): Response | null {
-  const unconfigured = checkApiKeyConfigured(deps)
-  if (unconfigured) return unconfigured
-  // No key and no refusal means a local server, which is open on purpose.
-  if (!deps.apiKey) return null
-
-  const presented = bearer(request)
-  if (!presented || !secretsMatch(presented, deps.apiKey)) {
-    return fail(401, 'Missing or incorrect API key. Send it as: Authorization: Bearer <key>')
-  }
-  return null
+function signInRequired(): Response {
+  return fail(
+    401,
+    'Sign in to use the log. POST /api/auth/login {"email":"…","password":"…"}, then send the token as: Authorization: Bearer <token>',
+  )
 }
 
 /* ------------------------------------------------------------------ */
@@ -165,30 +156,37 @@ export async function handleApiRequest(request: Request, deps: ApiDeps): Promise
     return json({
       ok: true,
       service: 'track-day-log',
-      authRequired: Boolean(deps.apiKey) || !deps.isLocal,
+      accounts: 'open',
       routes: ROUTES,
     })
   }
 
-  const denied = checkAuth(request, deps)
-  if (denied) return denied
-
   const now = deps.now ?? (() => Date.now())
 
   try {
+    // Signing up and signing in are the two things you can do without
+    // already being signed in.
+    if (collection === 'auth') return await authRoutes(request, deps, id, now)
+
+    const user = await signedInUser(request, deps.db, now())
+    if (!user) return signInRequired()
+    // A user's id is their garage id, so from here on every query is scoped
+    // to the person who made the request and there is no way to widen it.
+    const scope: Scope = { db: deps.db, garageId: user.id }
+
     switch (collection) {
       case 'garage':
-        return await garageRoutes(request, deps, now)
+        return await garageRoutes(request, scope, now)
       case 'bikes':
-        return await bikeRoutes(request, deps, id, now)
+        return await bikeRoutes(request, scope, id, now)
       case 'track-days':
-        return await trackDayRoutes(request, deps, id, now)
+        return await trackDayRoutes(request, scope, id, now)
       case 'sessions':
-        return await sessionRoutes(request, deps, id, url, now)
+        return await sessionRoutes(request, scope, id, url, now)
       case 'tyres':
-        return await tyreRoutes(request, deps, id, now)
+        return await tyreRoutes(request, scope, id, now)
       case 'preferences':
-        return await preferenceRoutes(request, deps)
+        return await preferenceRoutes(request, scope)
       default:
         return fail(404, `Unknown collection "${collection}".`, { routes: ROUTES })
     }
@@ -229,11 +227,77 @@ function parse<T extends z.ZodType>(schema: T, body: unknown): z.infer<T> {
 }
 
 /* ------------------------------------------------------------------ */
+/* Accounts                                                            */
+/* ------------------------------------------------------------------ */
+
+/** What a successful signup or sign-in hands back. */
+async function signedInResponse(db: Db, user: User, now: number, status = 200): Promise<Response> {
+  const { token, expiresAt } = await issueToken(db, user, now)
+  return json({ token, expiresAt, user }, status)
+}
+
+async function authRoutes(
+  request: Request,
+  deps: ApiDeps,
+  action: string | undefined,
+  now: () => number,
+): Promise<Response> {
+  const { db } = deps
+
+  if (action === 'signup' || action === 'login') {
+    if (request.method !== 'POST') return methodNotAllowed(['POST'])
+    const input = parse(credentialsInput, await readJson(request))
+    const email = normaliseEmail(input.email)
+    const oversized = checkCredentialLimits(email, input.password)
+    if (oversized) throw new BadRequest(oversized)
+
+    if (action === 'signup') {
+      // The rest of the rules govern what may be created, and are asked
+      // here only — never at sign-in, where they would turn a tightened
+      // rule into a lockout for accounts that already exist.
+      const problem = checkCredentials(email, input.password)
+      if (problem) throw new BadRequest(problem)
+
+      const user = await createUser(db, email, input.password, now())
+      if (!user) {
+        return fail(409, 'That email address already has an account. Sign in instead.')
+      }
+      return await signedInResponse(db, user, now(), 201)
+    }
+
+    const user = await authenticate(db, email, input.password)
+    // One answer for a wrong password and for an address with no account:
+    // told apart, this form becomes a way to ask who has an account here.
+    if (!user) return fail(401, 'That email and password do not match an account.')
+    return await signedInResponse(db, user, now())
+  }
+
+  if (action === 'logout') {
+    if (request.method !== 'POST') return methodNotAllowed(['POST'])
+    const token = bearer(request)
+    if (token) await revokeToken(db, token)
+    // Signing out an already-dead token is a success: the caller wanted to
+    // not be signed in, and they are not.
+    return json({ signedOut: true })
+  }
+
+  if (action === 'me') {
+    if (request.method !== 'GET') return methodNotAllowed(['GET'])
+    const user = await signedInUser(request, db, now())
+    return user ? json({ user }) : signInRequired()
+  }
+
+  return fail(404, `No auth route "${action ?? ''}".`, {
+    routes: ROUTES.filter((route) => route.includes('/api/auth/')),
+  })
+}
+
+/* ------------------------------------------------------------------ */
 /* Collections                                                         */
 /* ------------------------------------------------------------------ */
 
-async function garageRoutes(request: Request, deps: ApiDeps, now: () => number): Promise<Response> {
-  const { db, garageId } = deps
+async function garageRoutes(request: Request, scope: Scope, now: () => number): Promise<Response> {
+  const { db, garageId } = scope
   if (request.method === 'GET') return json(await getSnapshot(db, garageId))
   if (request.method === 'PUT') {
     const body = (await readJson(request)) as Partial<GarageData>
@@ -259,11 +323,11 @@ async function garageRoutes(request: Request, deps: ApiDeps, now: () => number):
 
 async function bikeRoutes(
   request: Request,
-  deps: ApiDeps,
+  scope: Scope,
   id: string | undefined,
   now: () => number,
 ): Promise<Response> {
-  const { db, garageId } = deps
+  const { db, garageId } = scope
   if (!id) {
     if (request.method === 'GET') return json(await listBikes(db, garageId))
     if (request.method === 'POST') {
@@ -292,11 +356,11 @@ async function bikeRoutes(
 
 async function trackDayRoutes(
   request: Request,
-  deps: ApiDeps,
+  scope: Scope,
   id: string | undefined,
   now: () => number,
 ): Promise<Response> {
-  const { db, garageId } = deps
+  const { db, garageId } = scope
   if (!id) {
     if (request.method === 'GET') return json(await listTrackDays(db, garageId))
     if (request.method === 'POST') {
@@ -351,12 +415,12 @@ async function resolveBikeId(db: Db, garageId: string, given: string | undefined
 
 async function sessionRoutes(
   request: Request,
-  deps: ApiDeps,
+  scope: Scope,
   id: string | undefined,
   url: URL,
   now: () => number,
 ): Promise<Response> {
-  const { db, garageId } = deps
+  const { db, garageId } = scope
   if (!id) {
     if (request.method === 'GET') {
       const trackDayId = url.searchParams.get('trackDayId')
@@ -403,11 +467,11 @@ async function nextSessionNumber(db: Db, garageId: string, trackDayId: string): 
 
 async function tyreRoutes(
   request: Request,
-  deps: ApiDeps,
+  scope: Scope,
   id: string | undefined,
   now: () => number,
 ): Promise<Response> {
-  const { db, garageId } = deps
+  const { db, garageId } = scope
   if (!id) {
     if (request.method === 'GET') return json(await listTyres(db, garageId))
     if (request.method === 'POST') {
@@ -434,8 +498,8 @@ async function tyreRoutes(
   return methodNotAllowed(['GET', 'PATCH', 'DELETE'])
 }
 
-async function preferenceRoutes(request: Request, deps: ApiDeps): Promise<Response> {
-  const { db, garageId } = deps
+async function preferenceRoutes(request: Request, scope: Scope): Promise<Response> {
+  const { db, garageId } = scope
   if (request.method === 'GET') return json(await getPreferences(db, garageId))
   if (request.method === 'PUT' || request.method === 'PATCH') {
     const input = parse(preferencesInput, await readJson(request))
@@ -464,6 +528,10 @@ function methodNotAllowed(allowed: string[]): Response {
 /** Advertised by `GET /api/health`, so the API documents itself. */
 export const ROUTES = [
   'GET    /api/health',
+  'POST   /api/auth/signup      {"email":"you@example.com","password":"…"} → token',
+  'POST   /api/auth/login       {"email":"you@example.com","password":"…"} → token',
+  'GET    /api/auth/me',
+  'POST   /api/auth/logout',
   'GET    /api/garage',
   'PUT    /api/garage',
   'GET    /api/bikes',

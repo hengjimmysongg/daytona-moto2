@@ -36,6 +36,18 @@ const adjuster = z.object({
 
 const sagWindow = z.tuple([z.number(), z.number()])
 
+/**
+ * Credentials.
+ *
+ * Only the shape is checked here — whether the address looks like one and
+ * the password is long enough is `checkCredentials`, which owns the wording
+ * a person actually reads.
+ */
+export const credentialsInput = z.object({
+  email: z.string(),
+  password: z.string(),
+})
+
 export const bikeInput = z.object({
   id: z.string().min(1).optional(),
   name: requiredString('A bike needs a name.'),

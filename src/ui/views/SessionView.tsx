@@ -25,6 +25,8 @@ import { buildAdvice, FEEDBACK_CATALOGUE, PHASES } from '../../core/advice'
 import { diffSetups, fieldsInGroup, validateSetup } from '../../core/setup'
 import { pressureRise, recommendFromHistory, allWearOptions, wearGuidance } from '../../core/tyres'
 import { previousSession, sessionsForDay } from '../../core/storage'
+import { csvFilename, sessionCsv } from '../../core/csv'
+import { downloadCsv } from '../download'
 import { describeTyre } from '../../data/presets'
 import type {
   Axle,
@@ -174,6 +176,22 @@ export function SessionView({
             />
           )}
         </Field>
+
+        <div className="btn-row" style={{ marginTop: 14, marginBottom: 14 }}>
+          <button
+            type="button"
+            className="btn btn--sm"
+            onClick={() => {
+              const day = data.trackDays.find((candidate) => candidate.id === session.trackDayId)
+              downloadCsv(
+                sessionCsv(data, session.id),
+                csvFilename([day?.date, day?.circuit, `session ${session.number}`]),
+              )
+            }}
+          >
+            Export session (CSV)
+          </button>
+        </div>
 
         {confirmingDelete ? (
           <>

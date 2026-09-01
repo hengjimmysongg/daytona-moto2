@@ -11,12 +11,27 @@
  * behaviour you want and the only one worth explaining. It is not a
  * multi-writer merge and does not pretend to be — two devices editing the
  * same day at once will keep whichever synced last.
+ *
+ * What the server keeps is scoped to an account, so syncing means being
+ * signed in. Signing in is not signing up for the app, though: the log
+ * works with no account at all, and an account is what makes it the same
+ * log on the next device.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { GarageData } from '../core/types'
 
-export const API_KEY_STORAGE = 'daytona-moto2:apiKey'
+/**
+ * The signed-in session, kept so a reload does not ask for a password
+ * again. The email rides along so the app can say who is signed in without
+ * a round trip it might not have the signal for.
+ */
+export const ACCOUNT_STORAGE = 'daytona-moto2:account'
+
+export interface Account {
+  email: string
+  token: string
+}
 
 export type SyncState =
   | 'disabled'
@@ -96,6 +111,48 @@ export function fetchSnapshot(key: string): Promise<GarageData> {
   return request('/garage', key) as Promise<GarageData>
 }
 
+/* ------------------------------------------------------------------ */
+/* Accounts                                                            */
+/* ------------------------------------------------------------------ */
+
+interface SignedIn {
+  token: string
+  user: { id: string; email: string }
+}
+
+async function authRequest(path: string, email: string, password: string): Promise<Account> {
+  const response = await fetch(`/api/auth/${path}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  })
+  const body = (await response.json().catch(() => null)) as ({ error?: string } & SignedIn) | null
+  if (!response.ok || !body?.token) {
+    throw new ApiError(body?.error ?? `Could not ${path} (${response.status})`, response.status)
+  }
+  return { email: body.user.email, token: body.token }
+}
+
+export function signUpRequest(email: string, password: string): Promise<Account> {
+  return authRequest('signup', email, password)
+}
+
+export function signInRequest(email: string, password: string): Promise<Account> {
+  return authRequest('login', email, password)
+}
+
+/** Best effort: the local sign-out is what matters, the server is courtesy. */
+export async function signOutRequest(token: string): Promise<void> {
+  try {
+    await fetch('/api/auth/logout', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}` },
+    })
+  } catch {
+    // Offline. The token will expire on its own.
+  }
+}
+
 export function pushSnapshot(key: string, data: GarageData): Promise<GarageData> {
   return request('/garage', key, { method: 'PUT', body: JSON.stringify(data) }) as Promise<GarageData>
 }
@@ -104,20 +161,26 @@ export function pushSnapshot(key: string, data: GarageData): Promise<GarageData>
 /* The hook                                                            */
 /* ------------------------------------------------------------------ */
 
-export function readStoredKey(): string | null {
+export function readStoredAccount(): Account | null {
   try {
-    return localStorage.getItem(API_KEY_STORAGE)
+    const raw = localStorage.getItem(ACCOUNT_STORAGE)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as Partial<Account>
+    if (typeof parsed.token !== 'string' || typeof parsed.email !== 'string') return null
+    return { token: parsed.token, email: parsed.email }
   } catch {
+    // Unreadable or unparseable: treat it as signed out rather than
+    // wedging the app on a corrupt value it cannot fix.
     return null
   }
 }
 
-function writeStoredKey(key: string | null): void {
+function writeStoredAccount(account: Account | null): void {
   try {
-    if (key) localStorage.setItem(API_KEY_STORAGE, key)
-    else localStorage.removeItem(API_KEY_STORAGE)
+    if (account) localStorage.setItem(ACCOUNT_STORAGE, JSON.stringify(account))
+    else localStorage.removeItem(ACCOUNT_STORAGE)
   } catch {
-    // Storage is unavailable; the key simply will not survive a reload.
+    // Storage is unavailable; the sign-in simply will not survive a reload.
   }
 }
 
@@ -125,8 +188,15 @@ export interface Sync {
   state: SyncState
   message?: string
   lastSyncedAt?: number
-  key: string | null
-  setKey: (key: string | null) => void
+  /** The signed-in rider, or null when the log is on this device only. */
+  account: Account | null
+  /** True while a sign-up or sign-in is in flight. */
+  signingIn: boolean
+  /** Why the last sign-up or sign-in failed, if it did. */
+  authError?: string
+  signUp: (email: string, password: string) => Promise<boolean>
+  signIn: (email: string, password: string) => Promise<boolean>
+  signOut: () => void
   syncNow: () => void
 }
 
@@ -137,10 +207,13 @@ export function useSync(
   data: GarageData,
   replace: (data: GarageData) => void,
 ): Sync {
-  const [key, setKeyState] = useState<string | null>(() => readStoredKey())
-  const [state, setState] = useState<SyncState>(key ? 'syncing' : 'disabled')
+  const [account, setAccount] = useState<Account | null>(() => readStoredAccount())
+  const [state, setState] = useState<SyncState>(account ? 'syncing' : 'disabled')
   const [message, setMessage] = useState<string | undefined>(undefined)
   const [lastSyncedAt, setLastSyncedAt] = useState<number | undefined>(undefined)
+  const [signingIn, setSigningIn] = useState(false)
+  const [authError, setAuthError] = useState<string | undefined>(undefined)
+  const key = account?.token ?? null
 
   // The latest document, readable from a timer without re-arming it on
   // every keystroke.
@@ -212,20 +285,56 @@ export function useSync(
     return () => clearTimeout(timer)
   }, [data.updatedAt, key, run])
 
-  const setKey = useCallback((next: string | null) => {
-    writeStoredKey(next)
+  const adopt = useCallback((next: Account | null) => {
+    writeStoredAccount(next)
+    // Forget what the last account had settled on, or the first push after
+    // switching riders would be skipped as "already synced".
     settledAt.current = null
     started.current = null
-    setKeyState(next)
+    setAccount(next)
     setMessage(undefined)
+    setAuthError(undefined)
   }, [])
+
+  const attempt = useCallback(
+    async (call: () => Promise<Account>): Promise<boolean> => {
+      setSigningIn(true)
+      setAuthError(undefined)
+      try {
+        adopt(await call())
+        return true
+      } catch (error) {
+        setAuthError(
+          error instanceof ApiError
+            ? error.message
+            : 'Could not reach the server. Your log is still safe on this device.',
+        )
+        return false
+      } finally {
+        setSigningIn(false)
+      }
+    },
+    [adopt],
+  )
+
+  const signOut = useCallback(() => {
+    // Local first: being signed out should not depend on having a signal.
+    const token = account?.token
+    adopt(null)
+    setState('disabled')
+    if (token) void signOutRequest(token)
+  }, [account, adopt])
 
   return {
     state,
-    key,
-    setKey,
+    account,
+    signingIn,
+    signUp: (email, password) => attempt(() => signUpRequest(email, password)),
+    signIn: (email, password) => attempt(() => signInRequest(email, password)),
+    signOut,
     syncNow: () => void run(),
     ...(message ? { message } : {}),
+    ...(authError ? { authError } : {}),
     ...(lastSyncedAt ? { lastSyncedAt } : {}),
   }
 }
