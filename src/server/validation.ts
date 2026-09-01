@@ -14,9 +14,9 @@
  */
 
 import { z } from 'zod'
-import { newId } from '../core/id'
-import { TRACK_SAG_TARGETS } from '../data/presets'
-import type { Bike, Session, TrackDay, Tyre } from '../core/types'
+import { newId } from '../core/id.js'
+import { TRACK_SAG_TARGETS } from '../data/presets.js'
+import type { Bike, Session, TrackDay, Tyre } from '../core/types.js'
 
 /**
  * A required string whose message covers being missing as well as being

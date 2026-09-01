@@ -20,8 +20,8 @@
  * the stroke.
  */
 
-import type { AdjusterSpec, Bike, SuspensionSetup } from './types'
-import { EMPTY_SETUP } from './types'
+import type { AdjusterSpec, Bike, SuspensionSetup } from './types.js'
+import { EMPTY_SETUP } from './types.js'
 
 export type SetupGroup = 'fork' | 'shock' | 'sag' | 'geometry'
 

@@ -14,8 +14,8 @@
  * All pressures are gauge pressure in bar (see `units.ts`).
  */
 
-import { ATMOSPHERIC_BAR, celsiusToKelvin } from './units'
-import type { Session, TyreRun, TyreWear } from './types'
+import { ATMOSPHERIC_BAR, celsiusToKelvin } from './units.js'
+import type { Session, TyreRun, TyreWear } from './types.js'
 
 /** Pressure rise across a session, bar. Undefined if either end is missing. */
 export function pressureRise(run: Pick<TyreRun, 'coldPressure' | 'hotPressure'>): number | undefined {

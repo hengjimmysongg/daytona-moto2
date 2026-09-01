@@ -20,7 +20,7 @@ import {
   toNumber,
   toText,
   type Db,
-} from './db'
+} from './db.js'
 import type {
   Bike,
   ForkSpec,
@@ -34,9 +34,9 @@ import type {
   TyreModel,
   TyreRun,
   TyreWear,
-} from '../core/types'
-import { SCHEMA_VERSION } from '../core/types'
-import { defaultPreferences } from '../core/storage'
+} from '../core/types.js'
+import { SCHEMA_VERSION } from '../core/types.js'
+import { defaultPreferences } from '../core/storage.js'
 
 /* ------------------------------------------------------------------ */
 /* Bikes                                                               */

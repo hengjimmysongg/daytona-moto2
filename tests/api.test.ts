@@ -10,7 +10,7 @@ let db: Db
 beforeEach(async () => {
   // A real SQLite database, in memory: same engine and same SQL as the
   // deployed one, so the schema is genuinely exercised.
-  db = createDb({ url: ':memory:' })
+  db = await createDb({ url: ':memory:' })
   await migrate(db)
 })
 

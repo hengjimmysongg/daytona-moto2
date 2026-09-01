@@ -20,7 +20,7 @@
  * also carries the instruction in words, which is what the UI shows.
  */
 
-import type { Axle } from './types'
+import type { Axle } from './types.js'
 
 export type CornerPhase = 'braking' | 'entry' | 'mid' | 'exit' | 'straight' | 'general'
 

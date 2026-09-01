@@ -8,8 +8,8 @@
  * the app treats all of this as a first draft the rider corrects.
  */
 
-import { newId } from '../core/id'
-import type { Bike, SagTargets, TyreModel } from '../core/types'
+import { newId } from '../core/id.js'
+import type { Bike, SagTargets, TyreModel } from '../core/types.js'
 
 /**
  * Sag windows for a sportbike set up for track riding, in mm of wheel travel.

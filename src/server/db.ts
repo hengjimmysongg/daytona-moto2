@@ -12,7 +12,7 @@
  * with somewhere durable to keep the file.
  */
 
-import { createClient, type Client, type InValue } from '@libsql/client'
+import type { Client, InValue } from '@libsql/client'
 
 export type Db = Client
 
@@ -30,7 +30,38 @@ export function readDbConfig(env: Record<string, string | undefined>): DbConfig 
   return authToken ? { url, authToken } : { url }
 }
 
-export function createDb(config: DbConfig): Db {
+/** The schemes a database somewhere else is reached over. */
+const REMOTE_SCHEMES = ['libsql:', 'https:', 'http:', 'wss:', 'ws:']
+
+/**
+ * Is this database over the network rather than on this disk?
+ *
+ * Two things turn on the answer: which half of the driver can serve it, and
+ * whether a deployment has been given a real database at all.
+ */
+export function isRemoteUrl(url: string): boolean {
+  const scheme = url.toLowerCase()
+  return REMOTE_SCHEMES.some((remote) => scheme.startsWith(remote))
+}
+
+/**
+ * Open a connection, loading only the half of the driver that can serve it.
+ *
+ * `@libsql/client` ships two builds. The default one embeds SQLite as a
+ * native binary, which is what reads a local file. The `web` one speaks
+ * HTTP and nothing else, which is all a hosted database needs.
+ *
+ * Choosing between them at runtime, by URL, is what makes this deployable
+ * without ceremony: a serverless bundle that never evaluates the native
+ * build cannot be broken by it — no binary to trace, unpack, or match to
+ * the host's libc, and a shorter cold start for not trying.
+ */
+export async function createDb(config: DbConfig): Promise<Db> {
+  if (isRemoteUrl(config.url)) {
+    const { createClient } = await import('@libsql/client/web')
+    return createClient(config)
+  }
+  const { createClient } = await import('@libsql/client')
   return createClient(config)
 }
 
@@ -175,25 +206,41 @@ export async function migrate(db: Db): Promise<void> {
 /* Connection reuse                                                    */
 /* ------------------------------------------------------------------ */
 
-let cached: { db: Db; ready: Promise<void>; key: string } | null = null
+interface Connection {
+  key: string
+  db: Promise<Db>
+  ready: Promise<void>
+}
+
+let cached: Connection | null = null
 
 /**
  * The database for this process, migrated once.
  *
  * A warm serverless container serves many requests, so both the connection
- * and the one-off migration are held in module scope. The migration is
- * stored as a promise rather than a flag so that concurrent first requests
- * wait on the same run instead of racing to create the same tables.
+ * and the one-off migration are held in module scope. Both are stored as
+ * promises rather than values so that concurrent first requests wait on the
+ * same run instead of racing to create the same tables.
  */
 export async function getDb(env: Record<string, string | undefined> = process.env): Promise<Db> {
   const config = readDbConfig(env)
   const key = `${config.url}|${config.authToken ?? ''}`
-  if (!cached || cached.key !== key) {
-    const db = createDb(config)
-    cached = { db, key, ready: migrate(db) }
-  }
-  await cached.ready
-  return cached.db
+  const connection = cached?.key === key ? cached : open(config, key)
+  await connection.ready
+  return connection.db
+}
+
+function open(config: DbConfig, key: string): Connection {
+  const db = createDb(config)
+  const connection: Connection = { key, db, ready: db.then(migrate) }
+  cached = connection
+  // An unreachable database at cold start must not follow the container
+  // around for the rest of its life. Forget a failed attempt so the next
+  // request makes a fresh one instead of replaying the same error.
+  connection.ready.catch(() => {
+    if (cached === connection) cached = null
+  })
+  return connection
 }
 
 /** Drop the cached connection. Tests use this; nothing else should need it. */

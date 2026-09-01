@@ -81,11 +81,14 @@ for (const variable of VARIABLES) {
 
 if (!checkOnly) {
   const example = existsSync(examplePath) ? readFileSync(examplePath, 'utf8') : ''
-  const header = example
-    .split('\n')
-    .filter((line) => line.startsWith('#'))
-    .slice(0, 2)
-    .join('\n')
+  // The leading comment block of .env.example, which is the bit that says
+  // where these values have to end up.
+  const preamble = []
+  for (const line of example.split('\n')) {
+    if (!line.startsWith('#')) break
+    preamble.push(line)
+  }
+  const header = preamble.join('\n')
 
   const body = VARIABLES.map((variable) => {
     const comment = `# ${variable.what}${variable.how ? `\n#   ${variable.how}` : ''}`
@@ -115,15 +118,19 @@ for (const variable of VARIABLES) {
 
 console.log('')
 if (missingForDeploy === 0) {
-  console.log('Ready. Local:   npm run dev:netlify')
-  console.log('      Deploy:   npx netlify env:import .env && npx netlify deploy --build --prod')
+  console.log('Ready.')
+  console.log('  Local     npm run dev:vercel        # or: npm run dev:netlify')
+  console.log('  Vercel    npx vercel env add TRACKER_API_KEY production   # once per variable')
+  console.log('            npx vercel deploy --prod')
+  console.log('  Netlify   npx netlify env:import .env')
+  console.log('            npx netlify deploy --build --prod')
 } else {
   console.log(`${missingForDeploy} variable(s) still needed to deploy. Local development works`)
   console.log('without them — the database falls back to the file ./data/tracker.db.')
-  console.log('\n  npm run dev:netlify        # works now')
+  console.log('\n  npm run dev:vercel         # works now')
 }
 console.log('')
 
-// .env is only ever read locally; `netlify env:import .env` is what puts
-// these on the site.
+// .env is only ever read on this machine. Whichever host you use wants its
+// own copy of these, set through that host — not this file.
 if (checkOnly && missingForDeploy > 0) process.exit(1)

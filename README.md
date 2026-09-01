@@ -14,8 +14,8 @@ written to by anything that can send JSON.
 ```
 npm install
 npm run setup          # writes .env, generating the API key
-npm run dev:netlify    # the whole site on http://localhost:8888
-npm test               # 159 tests
+npm run dev            # the app on http://localhost:5173
+npm test               # 170 tests
 npm run build          # static client into dist/
 ```
 
@@ -24,93 +24,126 @@ only fills in what is missing. It never prints a secret, only whether one is
 set. `npm run check:env` reports what is still needed and exits non-zero if
 anything is, which makes it usable in CI.
 
-If `netlify dev` cannot start (it downloads a Deno runtime for edge functions,
-which this app does not use), run the two halves separately instead — the Vite
-dev server proxies `/api` to the functions server:
+`npm run dev` is the whole app. The client is local-first, so it works with no
+API behind it at all — the server only matters once you want the log on a
+second device. To run both halves the way a host does:
 
 ```
-npm run dev:api        # functions + SQLite on :9999
-npm run dev            # client on :5173
+npm run dev:vercel     # vercel dev, both halves on :3000
+npm run dev:netlify    # netlify dev, both halves on :8888
 ```
+
+Each wants that host's CLI, and `vercel dev` wants a linked project. Neither is
+needed to work on the app: `npm run dev:api` serves the functions and SQLite on
+:9999 and the Vite dev server proxies `/api` there, so `npm run dev` beside it
+gives you the same two halves with no account anywhere.
 
 Locally the database is a plain SQLite file at `./data/tracker.db`. You can
 open it with `sqlite3` while the app is running.
 
 ---
 
-## Deploying to Netlify
+## Deploying
+
+It deploys to **Vercel** or to **Netlify**. Both configurations are in the
+repo, neither gets in the other's way, and the application code is the same
+either side — each host gets a file that does nothing but say where it is
+running.
 
 ### The one constraint worth understanding
 
-A Netlify Function runs in a container that is thrown away, with a filesystem
-to match. A SQLite file written inside one is gone by the next request and
-invisible to every other instance running at the same time. So the file cannot
-live *in* the function.
+A serverless function runs in a container that is thrown away, with a
+filesystem to match: read-only where it is not temporary. A SQLite file
+written inside one is gone by the next request and invisible to every other
+instance running at the same time. So the file cannot live *in* the function.
 
 The fix is not to give up SQLite, it is to put it somewhere durable. [Turso]
 runs libSQL — SQLite, the same engine and the same SQL — and speaks it over
-HTTP. The application code does not change: the same driver reads a local file
-in development and a hosted database in production, chosen by a URL.
+HTTP. The application code does not change: the same driver reads a local
+file in development and a hosted database in production, chosen by a URL.
+
+Forget to set it and the API says so. A deployment pointed at a `file:`
+database refuses to serve and names the variables it wants, rather than
+appearing to save a session and losing it on the next request.
 
 [Turso]: https://turso.tech
 
-### Steps
+### 1. Create the database
 
-1. **Create the database.**
+```bash
+npm i -g @tursodatabase/turso-cli   # or: brew install tursodatabase/tap/turso
+turso auth signup
+turso db create trackday
+turso db show trackday --url        # → libsql://trackday-you.turso.io
+turso db tokens create trackday     # → the auth token
+```
 
-   ```bash
-   npm i -g @tursodatabase/turso-cli   # or: brew install tursodatabase/tap/turso
-   turso auth signup
-   turso db create trackday
-   turso db show trackday --url        # → libsql://trackday-you.turso.io
-   turso db tokens create trackday     # → the auth token
-   ```
+Put both into `.env`, then check what is left:
 
-2. **Create the site** — either connect this repository at
-   [app.netlify.com](https://app.netlify.com) → *Add new site → Import an
-   existing project*, or from the command line:
+```bash
+npm run setup        # generates TRACKER_API_KEY if it is missing
+npm run check:env    # says what is still needed
+```
 
-   ```bash
-   npx netlify login
-   npx netlify init          # creates and links the site
-   ```
+`.env` is local-only and is never uploaded, so the host needs its own copy of
+these three values. That is most of what step 2 is.
 
-   `netlify.toml` already has the build command, the publish directory and the
-   functions directory, so there is nothing to fill in.
+### 2a. Vercel
 
-3. **Set the environment variables.** `.env` is local-only and is never
-   uploaded, so the site needs its own copy. Put the Turso values into `.env`,
-   check it, then import the lot:
+Either import the repository at [vercel.com/new](https://vercel.com/new), or
+from the command line:
 
-   ```bash
-   npm run check:env                 # says what is still missing
-   npx netlify env:import .env       # pushes them to the site
-   ```
+```bash
+npx vercel login
+npx vercel link                                    # creates and links the project
+npx vercel env add TURSO_DATABASE_URL production   # each reads its value from stdin
+npx vercel env add TURSO_AUTH_TOKEN production
+npx vercel env add TRACKER_API_KEY production
+npx vercel deploy --prod
+```
 
-   Or set them one at a time in *Site configuration → Environment variables*,
-   or with `npx netlify env:set NAME "value"`.
+`vercel.json` already carries the framework, the build command, the output
+directory and two rewrites — `/api/*` to the function, everything else to
+`index.html` so a deep link or a refresh lands on the app. Nothing to fill in
+but those variables, which can also be set under *Project Settings →
+Environment Variables*. Add them to the *Preview* environment too if you want
+preview deployments to work; a preview with no key refuses to serve, by
+design.
 
-4. **Deploy.**
+### 2b. Netlify
 
-   ```bash
-   npx netlify deploy --build --prod
-   ```
+Either connect the repository at [app.netlify.com](https://app.netlify.com) →
+*Add new site → Import an existing project*, or from the command line:
 
-5. **Check it, then connect the app.**
+```bash
+npx netlify login
+npx netlify init                  # creates and links the site
+npx netlify env:import .env       # pushes the variables to the site
+npx netlify deploy --build --prod
+```
 
-   ```bash
-   curl https://your-site.netlify.app/api/health
-   ```
+`netlify.toml` already has the build command, the publish directory and the
+functions directory. Variables can also be set in *Site configuration →
+Environment variables*, or with `npx netlify env:set NAME "value"`.
 
-   Open the site, go to **Garage → Sync**, and paste the `TRACKER_API_KEY`. The
-   browser stores it and syncs from then on.
+### 3. Check it, then connect the app
+
+```bash
+curl https://your-deployment/api/health
+```
+
+A healthy deployment answers `{"ok": true, …}` without a key. A misconfigured
+one answers 503 and says which variable is missing.
+
+Then open the site, go to **Garage → Sync**, and paste the `TRACKER_API_KEY`.
+The browser stores it and syncs from then on.
 
 ### Environment variables
 
 | Variable | Required | What it does |
 | --- | --- | --- |
 | `TRACKER_API_KEY` | on a deployment | The shared secret every `/api` call must present. Without it a **deployed** API refuses to serve at all; locally it is optional and the API is open. |
-| `TURSO_DATABASE_URL` | on a deployment | The libSQL database. Falls back to `file:./data/tracker.db`, which is only useful locally. |
+| `TURSO_DATABASE_URL` | on a deployment | The libSQL database. Falls back to `file:./data/tracker.db`, which is only useful locally — a deployment pointed at a file refuses to serve. |
 | `TURSO_AUTH_TOKEN` | on a deployment | Token for that database. |
 | `GARAGE_ID` | no | Which garage rows belong to. Defaults to `default`; set it to keep two separate logs in one database. |
 
@@ -137,7 +170,7 @@ psi and °F are a browser display preference. A cold pressure of `31` is
 rejected with a message pointing out that 31 psi is about 2.14 bar.
 
 ```bash
-API=https://your-site.netlify.app/api
+API=https://your-deployment/api
 AUTH="Authorization: Bearer $TRACKER_API_KEY"
 
 # A bike needs only a name; the adjuster ranges and sag windows are filled in
@@ -328,9 +361,11 @@ src/server/   the API: Request in, Response out, no framework
   repository.ts rows to domain objects and back
   validation.ts what the API accepts, and the defaults it fills in
   router.ts     the routes and the bearer-token check
+  handler.ts    the API minus the host: environment, database, refusals
 src/data/     bike templates, circuits, tyre models — all editable defaults
 src/ui/       React views, plus the sync loop
-netlify/      the function, a thin adapter that only reads the environment
+api/          the Vercel function, which only says where it is running
+netlify/      the Netlify function, which does the same
 tests/        the calculators, the API against a real in-memory SQLite,
               the conventions that are easy to invert, and the failure paths
 ```
@@ -338,3 +373,8 @@ tests/        the calculators, the API against a real in-memory SQLite,
 The core has no React and no SQL in it. The server takes a `Request` and
 returns a `Response` with its database handed in, so the whole API is tested
 against a real in-memory SQLite without a server running.
+
+Both host adapters are four lines around `serveApiRequest`, which is why
+there are two of them and no framework in either. Relative imports outside
+`src/ui` carry their `.js` extension because that code is also run by Node
+directly, unbundled, where the ESM resolver does not guess at extensions.

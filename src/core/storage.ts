@@ -10,8 +10,8 @@
  * keeps this module testable and makes it usable from a Node script.
  */
 
-import type { GarageData, Preferences, Session, TrackDay } from './types'
-import { SCHEMA_VERSION } from './types'
+import type { GarageData, Preferences, Session, TrackDay } from './types.js'
+import { SCHEMA_VERSION } from './types.js'
 
 export interface StorageLike {
   getItem(key: string): string | null

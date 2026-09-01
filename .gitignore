@@ -5,8 +5,9 @@ dist/
 .DS_Store
 coverage/
 
-# Netlify build output and local state
+# Host build output and local state
 .netlify/
+.vercel/
 
 # Local secrets, and the local SQLite database they point at
 .env

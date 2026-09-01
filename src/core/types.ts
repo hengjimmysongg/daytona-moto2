@@ -14,7 +14,7 @@
  * and lives in `Preferences`, never in the data itself.
  */
 
-import type { MassUnit, PressureUnit, TemperatureUnit } from './units'
+import type { MassUnit, PressureUnit, TemperatureUnit } from './units.js'
 
 /** Milliseconds since epoch. */
 export type Timestamp = number

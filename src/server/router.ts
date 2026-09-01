@@ -10,7 +10,7 @@
  */
 
 import { z } from 'zod'
-import type { Db } from './db'
+import type { Db } from './db.js'
 import {
   deleteRow,
   deleteTrackDayCascade,
@@ -30,7 +30,7 @@ import {
   saveSession,
   saveTrackDay,
   saveTyre,
-} from './repository'
+} from './repository.js'
 import {
   bikeInput,
   buildBike,
@@ -42,9 +42,9 @@ import {
   sessionInput,
   trackDayInput,
   tyreInput,
-} from './validation'
-import { defaultPreferences } from '../core/storage'
-import type { GarageData } from '../core/types'
+} from './validation.js'
+import { defaultPreferences } from '../core/storage.js'
+import type { GarageData } from '../core/types.js'
 
 export interface ApiDeps {
   db: Db
@@ -77,7 +77,8 @@ const CORS_HEADERS = {
   'access-control-max-age': '86400',
 }
 
-function json(body: unknown, status = 200): Response {
+/** Exported so a host adapter can refuse a request in the same shape. */
+export function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body, null, 2), {
     status,
     headers: { ...JSON_HEADERS, ...CORS_HEADERS },
@@ -112,14 +113,29 @@ function bearer(request: Request): string | null {
   return fromQuery ?? null
 }
 
+/**
+ * The refusal a deployment with no key configured gets, whatever it asked
+ * for.
+ *
+ * Exported because it depends on nothing but the environment, which lets a
+ * host adapter send it before opening a database that a caller holding no
+ * key has no business making it open.
+ */
+export function checkApiKeyConfigured(deps: Pick<ApiDeps, 'apiKey' | 'isLocal'>): Response | null {
+  if (deps.apiKey || deps.isLocal) return null
+  return fail(
+    503,
+    'This deployment has no API key configured, so it will not serve data. ' +
+      "Set TRACKER_API_KEY in the deployment's environment and redeploy.",
+  )
+}
+
 function checkAuth(request: Request, deps: ApiDeps): Response | null {
-  if (!deps.apiKey) {
-    if (deps.isLocal) return null
-    return fail(
-      503,
-      'This deployment has no API key configured, so it will not serve data. Set TRACKER_API_KEY in the site environment and redeploy.',
-    )
-  }
+  const unconfigured = checkApiKeyConfigured(deps)
+  if (unconfigured) return unconfigured
+  // No key and no refusal means a local server, which is open on purpose.
+  if (!deps.apiKey) return null
+
   const presented = bearer(request)
   if (!presented || !secretsMatch(presented, deps.apiKey)) {
     return fail(401, 'Missing or incorrect API key. Send it as: Authorization: Bearer <key>')

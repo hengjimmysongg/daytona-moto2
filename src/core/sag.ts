@@ -22,7 +22,7 @@
  * Every number here is millimetres of *wheel* travel.
  */
 
-import type { Axle, Bike, SagTargets } from './types'
+import type { Axle, Bike, SagTargets } from './types.js'
 
 export interface SagMeasurement {
   /** L1 — fully extended, wheel unloaded. */
