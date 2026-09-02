@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   clearGarage,
   createEmptyGarage,
+  defaultPreferences,
   exportGarage,
   ImportError,
   importGarage,
@@ -151,7 +152,9 @@ describe('import and export', () => {
       JSON.stringify({ version: 1, preferences: { pressureUnit: 'bar' } }),
     )
     expect(imported.preferences.pressureUnit).toBe('bar')
-    expect(imported.preferences.temperatureUnit).toBe('F')
+    // The unit the file did not name comes from the defaults, whatever
+    // those currently are.
+    expect(imported.preferences.temperatureUnit).toBe(defaultPreferences().temperatureUnit)
   })
 
   it('suggests a dated filename', () => {

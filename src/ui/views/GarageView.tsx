@@ -19,9 +19,9 @@ import { massFromKg, massToKg } from '../../core/units'
 import { BIKE_TEMPLATES } from '../../data/presets'
 import type { Bike, GarageData, Preferences } from '../../core/types'
 import type { Garage } from '../store'
-import type { Sync } from '../sync'
+import type { Auth } from '../auth'
 
-export function GarageView({ garage, sync }: { garage: Garage; sync: Sync }) {
+export function GarageView({ garage, auth }: { garage: Garage; auth: Auth }) {
   const { data, update, replace } = garage
   const [editingId, setEditingId] = useState<string | null>(null)
   const editing = data.bikes.find((bike) => bike.id === editingId)
@@ -110,7 +110,7 @@ export function GarageView({ garage, sync }: { garage: Garage; sync: Sync }) {
         onChange={(preferences) => update((current) => ({ ...current, preferences }))}
       />
 
-      <AccountCard sync={sync} />
+      <AccountCard auth={auth} />
 
       <DataCard data={data} onReplace={replace} />
     </>
@@ -120,136 +120,33 @@ export function GarageView({ garage, sync }: { garage: Garage; sync: Sync }) {
 /* ------------------------------------------------------------------ */
 
 /**
- * The server side of the log.
+ * Who is signed in.
  *
- * An account is offered, never demanded. The app is local-first and the
- * paddock has no signal, so signing in is what makes the log survive a lost
- * phone and turn up on the next device — not what makes it work.
+ * Short by design. The interesting part of an account here is not this
+ * panel, it is that every row in the database carries the owner's id and
+ * Postgres refuses to hand over anybody else's.
  */
-function AccountCard({ sync }: { sync: Sync }) {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [mode, setMode] = useState<'signup' | 'signin'>('signup')
-
-  const submit = async () => {
-    const address = email.trim()
-    if (address === '' || password === '') return
-    const ok = mode === 'signup' ? await sync.signUp(address, password) : await sync.signIn(address, password)
-    // Never leave a password sitting in a form field on a phone that gets
-    // handed around a paddock.
-    if (ok) {
-      setEmail('')
-      setPassword('')
-    } else {
-      setPassword('')
-    }
-  }
-
-  if (sync.account) {
-    return (
-      <Card
-        title="Account"
-        hint="Your log is saved on this device first and copied to your account when there is a signal."
-      >
-        <Readout label="Signed in as" value={sync.account.email} />
-        <Readout label="Status" value={SYNC_LABELS[sync.state]} />
-        {sync.lastSyncedAt && (
-          <Readout label="Last synced" value={new Date(sync.lastSyncedAt).toLocaleTimeString()} />
-        )}
-
-        {sync.message && (
-          <div style={{ marginTop: 10 }}>
-            <Note tone={sync.state === 'unauthorised' ? 'bad' : 'warn'}>{sync.message}</Note>
-          </div>
-        )}
-
-        <div className="btn-row" style={{ marginTop: 14 }}>
-          <button type="button" className="btn" onClick={sync.syncNow}>
-            Sync now
-          </button>
-          <button type="button" className="btn btn--danger" onClick={sync.signOut}>
-            Sign out
-          </button>
-        </div>
-        <p className="muted" style={{ fontSize: 13, margin: '10px 0 0' }}>
-          Signing out leaves this device’s copy of the log alone. It stays here.
-        </p>
-      </Card>
-    )
-  }
-
+function AccountCard({ auth }: { auth: Auth }) {
   return (
-    <Card
-      title="Account"
-      hint="Free, and only needed to keep the log across devices. Everything works without one — the log is kept in this browser."
-    >
-      <div className="btn-row" style={{ marginBottom: 12 }}>
-        <button
-          type="button"
-          className={mode === 'signup' ? 'btn btn--primary' : 'btn'}
-          aria-pressed={mode === 'signup'}
-          onClick={() => setMode('signup')}
-        >
-          Create account
-        </button>
-        <button
-          type="button"
-          className={mode === 'signin' ? 'btn btn--primary' : 'btn'}
-          aria-pressed={mode === 'signin'}
-          onClick={() => setMode('signin')}
-        >
-          Sign in
-        </button>
-      </div>
-
-      <TextField
-        label="Email"
-        type="email"
-        autoComplete="email"
-        value={email}
-        onChange={setEmail}
-        placeholder="you@example.com"
-      />
-      <TextField
-        label="Password"
-        type="password"
-        autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
-        {...(mode === 'signup' ? { hint: 'At least 8 characters.' } : {})}
-        value={password}
-        onChange={setPassword}
-        placeholder="••••••••"
-      />
-
-      {sync.authError && (
-        <div style={{ marginBottom: 10 }}>
-          <Note tone="bad">{sync.authError}</Note>
+    <Card title="Account" hint="Your log is stored against this account and nobody else can read it.">
+      <Readout label="Signed in as" value={auth.account?.email ?? '—'} />
+      {auth.error && (
+        <div style={{ marginTop: 10 }}>
+          <Note tone="bad">{auth.error}</Note>
         </div>
       )}
-
-      <button
-        type="button"
-        className="btn btn--primary btn--block"
-        disabled={sync.signingIn || email.trim() === '' || password === ''}
-        onClick={() => void submit()}
-      >
-        {sync.signingIn ? 'Working…' : mode === 'signup' ? 'Create account' : 'Sign in'}
-      </button>
-
-      <p className="muted" style={{ fontSize: 13, margin: '10px 0 0' }}>
-        Not signed in. Everything still works — the log is kept in this browser, and you can export
-        a backup below.
-      </p>
+      <div className="btn-row" style={{ marginTop: 14 }}>
+        <button
+          type="button"
+          className="btn btn--danger"
+          disabled={auth.working}
+          onClick={() => void auth.signOut()}
+        >
+          Sign out
+        </button>
+      </div>
     </Card>
   )
-}
-
-const SYNC_LABELS: Record<Sync['state'], string> = {
-  disabled: 'On this device only',
-  offline: 'Offline — will sync later',
-  syncing: 'Syncing…',
-  synced: 'Synced',
-  unauthorised: 'Signed out — sign in again',
-  error: 'Sync failed',
 }
 
 /* ------------------------------------------------------------------ */

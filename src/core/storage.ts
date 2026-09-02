@@ -32,8 +32,8 @@ export class ImportError extends Error {}
 export function defaultPreferences(): Preferences {
   return {
     pressureUnit: 'psi',
-    temperatureUnit: 'F',
-    massUnit: 'lb',
+    temperatureUnit: 'C',
+    massUnit: 'kg',
     // Starting points only — replace with the hot pressures from your own
     // tyre's data sheet, which is the number that actually matters.
     targetHotPressure: { front: 2.2, rear: 1.9 },

@@ -5,8 +5,9 @@ import { SagView } from './views/SagView'
 import { SessionView } from './views/SessionView'
 import { TrackDayDetailView, TrackDayListView } from './views/TrackDayView'
 import { TyreView } from './views/TyreView'
-import { useGarage } from './store'
-import { useSync, type SyncState } from './sync'
+import { SignInView } from './views/SignInView'
+import { useGarage, type Garage } from './store'
+import { useAuth } from './auth'
 
 type Route =
   | { view: 'days' }
@@ -24,9 +25,35 @@ const TABS = [
 ] as const
 
 export function App() {
-  const garage = useGarage()
-  const sync = useSync(garage.data, garage.replace)
+  const auth = useAuth()
+  const garage = useGarage(auth.account?.id ?? null)
   const [route, setRoute] = useState<Route>({ view: 'days' })
+
+  // Nothing to show until we know whose log this is: the data lives in the
+  // database, and which rows come back depends on who is asking.
+  if (auth.loading) {
+    return (
+      <div className="app">
+        <header className="masthead">
+          <h1 className="masthead__title">Track day log</h1>
+        </header>
+      </div>
+    )
+  }
+
+  if (!auth.account) {
+    return (
+      <div className="app">
+        <header className="masthead">
+          <h1 className="masthead__title">Track day log</h1>
+          <p className="masthead__sub">Suspension and tyre pressures, session by session.</p>
+        </header>
+        <main>
+          <SignInView auth={auth} />
+        </main>
+      </div>
+    )
+  }
 
   // Which tab lights up: a day and a session both belong to Track days.
   const tab: (typeof TABS)[number]['key'] =
@@ -37,7 +64,7 @@ export function App() {
       <header className="masthead">
         <div className="masthead__row">
           <h1 className="masthead__title">{titleFor(tab)}</h1>
-          <SyncBadge state={sync.state} />
+          <SaveBadge garage={garage} />
         </div>
         <p className="masthead__sub">{subtitleFor(tab)}</p>
       </header>
@@ -62,13 +89,8 @@ export function App() {
       <main>
         {garage.error && (
           <Note tone="bad">
-            Your data could not be read or saved: {garage.error}. Changes may not survive a reload.
-          </Note>
-        )}
-        {!garage.persistent && (
-          <Note tone="warn">
-            This browser will not let the app store anything, so the log is only held in memory and
-            will be lost when you close the tab. Export a backup before you do.
+            That change has not reached the database: {garage.error}. It is still on screen — check
+            your connection and edit anything to try again.
           </Note>
         )}
 
@@ -95,24 +117,18 @@ export function App() {
         )}
         {route.view === 'sag' && <SagView garage={garage} />}
         {route.view === 'tyres' && <TyreView garage={garage} />}
-        {route.view === 'garage' && <GarageView garage={garage} sync={sync} />}
+        {route.view === 'garage' && <GarageView garage={garage} auth={auth} />}
       </main>
     </div>
   )
 }
 
-/** A word on whether the log has reached the server, and nothing more. */
-function SyncBadge({ state }: { state: SyncState }) {
-  if (state === 'disabled') return null
-  const look: Record<Exclude<SyncState, 'disabled'>, { tone: string; label: string }> = {
-    syncing: { tone: 'muted', label: 'Syncing…' },
-    synced: { tone: 'ok', label: 'Synced' },
-    offline: { tone: 'muted', label: 'Offline' },
-    unauthorised: { tone: 'bad', label: 'Sign in again' },
-    error: { tone: 'warn', label: 'Sync failed' },
-  }
-  const { tone, label } = look[state]
-  return <span className={`badge badge--${tone}`}>{label}</span>
+/** Whether what is on screen has reached the database, and nothing more. */
+function SaveBadge({ garage }: { garage: Garage }) {
+  if (garage.error) return <span className="badge badge--bad">Not saved</span>
+  if (garage.loading) return <span className="badge badge--muted">Loading…</span>
+  if (garage.saving) return <span className="badge badge--muted">Saving…</span>
+  return <span className="badge badge--ok">Saved</span>
 }
 
 function titleFor(tab: string): string {
