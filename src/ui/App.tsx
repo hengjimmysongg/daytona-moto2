@@ -87,10 +87,19 @@ export function App() {
       </nav>
 
       <main>
-        {garage.error && (
+        {garage.loadError && (
           <Note tone="bad">
-            That change has not reached the database: {garage.error}. It is still on screen — check
-            your connection and edit anything to try again.
+            Your log could not be loaded: {garage.loadError}. Nothing has been lost — this screen
+            just does not know what is in there yet.{' '}
+            <button type="button" className="btn btn--sm" onClick={garage.reload}>
+              Try again
+            </button>
+          </Note>
+        )}
+        {garage.saveError && (
+          <Note tone="bad">
+            That change has not reached the database: {garage.saveError}. It is still on screen —
+            edit anything to try again.
           </Note>
         )}
 
@@ -125,7 +134,8 @@ export function App() {
 
 /** Whether what is on screen has reached the database, and nothing more. */
 function SaveBadge({ garage }: { garage: Garage }) {
-  if (garage.error) return <span className="badge badge--bad">Not saved</span>
+  if (garage.loadError) return <span className="badge badge--bad">Not loaded</span>
+  if (garage.saveError) return <span className="badge badge--bad">Not saved</span>
   if (garage.loading) return <span className="badge badge--muted">Loading…</span>
   if (garage.saving) return <span className="badge badge--muted">Saving…</span>
   return <span className="badge badge--ok">Saved</span>

@@ -40,8 +40,15 @@ export interface Garage {
   loading: boolean
   /** True while a write is in flight. */
   saving: boolean
-  /** Set when the last read or write failed. */
-  error?: string
+  /**
+   * Set when the log could not be read. The screen is empty because we do
+   * not know what is in there — not because anything was lost.
+   */
+  loadError?: string
+  /** Set when a change on screen has not reached the database. */
+  saveError?: string
+  /** Try the failed load again. */
+  reload: () => void
 }
 
 /* ------------------------------------------------------------------ */
@@ -160,6 +167,46 @@ async function save(before: GarageData, after: GarageData, userId: string): Prom
 }
 
 /* ------------------------------------------------------------------ */
+/* Retrying                                                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Try again before giving up.
+ *
+ * Two failures here are routine and both pass on their own: a phone coming
+ * back onto signal, and a freshly refreshed token whose `iat` is a second
+ * ahead of the clock that checks it — Supabase mints tokens on one machine
+ * and validates them on another, and the check allows no leeway. Telling a
+ * rider in the pit lane to "try again" for either is passing on our problem.
+ *
+ * Three attempts over about four seconds covers both without making a real
+ * failure take noticeably longer to report.
+ */
+const RETRY_DELAYS_MS = [800, 3000]
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function withRetries<T>(attempt: () => Promise<T>): Promise<T> {
+  let last: unknown
+  for (let index = 0; index <= RETRY_DELAYS_MS.length; index += 1) {
+    try {
+      return await attempt()
+    } catch (cause) {
+      last = cause
+      const wait = RETRY_DELAYS_MS[index]
+      if (wait === undefined) break
+      await sleep(wait)
+      // A new token, in case the old one was the problem. Best effort: if
+      // this fails the retry below will surface the real error.
+      await supabase.auth.refreshSession().catch(() => undefined)
+    }
+  }
+  throw last
+}
+
+/* ------------------------------------------------------------------ */
 /* The hook                                                            */
 /* ------------------------------------------------------------------ */
 
@@ -167,7 +214,9 @@ export function useGarage(userId: string | null): Garage {
   const [data, setData] = useState<GarageData>(() => createEmptyGarage())
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | undefined>(undefined)
+  const [loadError, setLoadError] = useState<string | undefined>(undefined)
+  const [saveError, setSaveError] = useState<string | undefined>(undefined)
+  const [attempt, setAttempt] = useState(0)
 
   // The last state known to be in the database, so a write knows what moved.
   const stored = useRef<GarageData>(data)
@@ -182,16 +231,18 @@ export function useGarage(userId: string | null): Garage {
     }
     let live = true
     setLoading(true)
-    void loadGarage()
+    void withRetries(loadGarage)
       .then((loaded) => {
         if (!live) return
         stored.current = loaded
         setData(loaded)
-        setError(undefined)
+        setLoadError(undefined)
       })
       .catch((cause: unknown) => {
         if (!live) return
-        setError(cause instanceof Error ? cause.message : 'Could not load your log.')
+        // Leave `data` as it is. Replacing it with an empty garage would
+        // show a rider an empty season and let them believe it.
+        setLoadError(cause instanceof Error ? cause.message : 'Could not load your log.')
       })
       .finally(() => {
         if (live) setLoading(false)
@@ -199,7 +250,9 @@ export function useGarage(userId: string | null): Garage {
     return () => {
       live = false
     }
-  }, [userId])
+  }, [userId, attempt])
+
+  const reload = useCallback(() => setAttempt((count) => count + 1), [])
 
   /**
    * Show the change, then write it.
@@ -216,10 +269,10 @@ export function useGarage(userId: string | null): Garage {
       const previous = stored.current
       stored.current = next
       setSaving(true)
-      void save(previous, next, userId)
-        .then(() => setError(undefined))
+      void withRetries(() => save(previous, next, userId))
+        .then(() => setSaveError(undefined))
         .catch((cause: unknown) => {
-          setError(cause instanceof Error ? cause.message : 'Could not save that change.')
+          setSaveError(cause instanceof Error ? cause.message : 'Could not save that change.')
         })
         .finally(() => setSaving(false))
     },
@@ -241,5 +294,14 @@ export function useGarage(userId: string | null): Garage {
 
   const replace = useCallback((next: GarageData) => commit(next), [commit])
 
-  return { data, update, replace, loading, saving, ...(error ? { error } : {}) }
+  return {
+    data,
+    update,
+    replace,
+    reload,
+    loading,
+    saving,
+    ...(loadError ? { loadError } : {}),
+    ...(saveError ? { saveError } : {}),
+  }
 }
