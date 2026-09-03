@@ -418,20 +418,6 @@ function BikeEditor({
               })
             }
           />
-          <NumberField
-            label="Preload thread pitch"
-            hint="mm of preload per turn"
-            value={
-              bike.fork.preload.mmPerTurn === undefined ? '' : String(bike.fork.preload.mmPerTurn)
-            }
-            suffix="mm/turn"
-            onChange={(mmPerTurn) =>
-              onChange({
-                ...bike,
-                fork: { ...bike.fork, preload: { ...bike.fork.preload, mmPerTurn } },
-              })
-            }
-          />
         </div>
       </Card>
 
@@ -473,29 +459,7 @@ function BikeEditor({
               })
             }
           />
-          <NumberField
-            label="Preload thread pitch"
-            hint="mm of preload per turn"
-            value={
-              bike.shock.preload.mmPerTurn === undefined
-                ? ''
-                : String(bike.shock.preload.mmPerTurn)
-            }
-            suffix="mm/turn"
-            onChange={(mmPerTurn) =>
-              onChange({
-                ...bike,
-                shock: { ...bike.shock, preload: { ...bike.shock.preload, mmPerTurn } },
-              })
-            }
-          />
         </div>
-        <NumberField
-          label="Linkage motion ratio"
-          hint="Rear wheel travel divided by shock stroke. Typically 2.5–3.0 on a sportbike, and it is what turns a wanted change in rear sag into turns of the collar."
-          value={bike.shock.motionRatio === undefined ? '' : String(bike.shock.motionRatio)}
-          onChange={(motionRatio) => onChange({ ...bike, shock: { ...bike.shock, motionRatio } })}
-        />
       </Card>
 
       <Card title="Sag windows" hint="What this bike is judged against, in mm of wheel travel.">

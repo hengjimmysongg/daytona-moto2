@@ -3,8 +3,7 @@
  *
  * Every number here is a plausible template meant to be edited to match the
  * hardware actually on the bike. Adjuster ranges differ between model years
- * and between a stock cartridge and whatever the previous owner fitted, and
- * a preload thread pitch is worth measuring once rather than assuming — so
+ * and between a stock cartridge and whatever the previous owner fitted, so
  * the app treats all of this as a first draft the rider corrects.
  */
 
@@ -67,15 +66,14 @@ export const BIKE_TEMPLATES: BikeTemplate[] = [
         travel: 120,
         compression: { range: 20, unit: 'clicks' },
         rebound: { range: 20, unit: 'clicks' },
-        preload: { range: 12, unit: 'turns', mmPerTurn: 1 },
+        preload: { range: 12, unit: 'turns' },
       },
       shock: {
         travel: 130,
-        motionRatio: 2.7,
         compressionLow: { range: 20, unit: 'clicks' },
         compressionHigh: { range: 3, unit: 'turns' },
         rebound: { range: 20, unit: 'clicks' },
-        preload: { range: 10, unit: 'turns', mmPerTurn: 1.5 },
+        preload: { range: 10, unit: 'turns' },
       },
       sagTargets: TRACK_SAG_TARGETS,
       notes:
@@ -93,15 +91,14 @@ export const BIKE_TEMPLATES: BikeTemplate[] = [
         travel: 120,
         compression: { range: 30, unit: 'clicks' },
         rebound: { range: 30, unit: 'clicks' },
-        preload: { range: 15, unit: 'turns', mmPerTurn: 1 },
+        preload: { range: 15, unit: 'turns' },
       },
       shock: {
         travel: 130,
-        motionRatio: 2.9,
         compressionLow: { range: 30, unit: 'clicks' },
         compressionHigh: { range: 4, unit: 'turns' },
         rebound: { range: 30, unit: 'clicks' },
-        preload: { range: 12, unit: 'turns', mmPerTurn: 1.5 },
+        preload: { range: 12, unit: 'turns' },
       },
       sagTargets: TRACK_SAG_TARGETS,
       notes: 'Ride height recorded as shock/linkage rod length.',
@@ -116,14 +113,13 @@ export const BIKE_TEMPLATES: BikeTemplate[] = [
         travel: 120,
         compression: { range: 18, unit: 'clicks' },
         rebound: { range: 18, unit: 'clicks' },
-        preload: { range: 8, unit: 'turns', mmPerTurn: 1 },
+        preload: { range: 8, unit: 'turns' },
       },
       shock: {
         travel: 130,
-        motionRatio: 2.6,
         compressionLow: { range: 18, unit: 'clicks' },
         rebound: { range: 18, unit: 'clicks' },
-        preload: { range: 10, unit: 'turns', mmPerTurn: 1.5 },
+        preload: { range: 10, unit: 'turns' },
       },
       sagTargets: TRACK_SAG_TARGETS,
     },

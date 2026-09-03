@@ -29,20 +29,14 @@ export type Axle = 'front' | 'rear'
 /* ------------------------------------------------------------------ */
 
 /**
- * How a single adjuster behaves, so the app can validate a value and
- * translate between the units printed on the part and millimetres of spring
- * preload.
+ * How a single adjuster behaves, so the app can tell a plausible setting
+ * from an impossible one.
  */
 export interface AdjusterSpec {
   /** Total clicks or turns available, counted from fully closed / fully in. */
   range: number
   /** `clicks` for damping needles, `turns` for threaded preload collars. */
   unit: 'clicks' | 'turns' | 'mm' | 'lines'
-  /**
-   * For preload adjusters only: millimetres of spring preload gained per
-   * turn of the collar. This is the thread pitch of the adjuster.
-   */
-  mmPerTurn?: number
 }
 
 export interface ForkSpec {
@@ -59,13 +53,6 @@ export interface ShockSpec {
   springRate?: number
   /** Rear wheel travel in mm. */
   travel?: number
-  /**
-   * Rear wheel travel divided by shock stroke. A millimetre of preload at
-   * the shock moves rear wheel sag by roughly this much, so the app needs it
-   * to turn "I want 4 mm less sag" into "turn the collar this far".
-   * Typical sportbike linkage: 2.5–3.0.
-   */
-  motionRatio?: number
   compressionLow: AdjusterSpec
   compressionHigh?: AdjusterSpec
   rebound: AdjusterSpec

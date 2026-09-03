@@ -152,8 +152,11 @@ moves pressure on its own, and a gain between the morning sighting laps and
 the first session is often just the sun coming out.
 
 **Sag.** Rider and free sag from the three measurements, checked against
-windows that belong to the bike. Preload corrections come back in turns of
-your adjuster, with the rear divided through the linkage motion ratio.
+windows that belong to the bike. The correction comes back as a direction and
+a distance to close — "add preload until rider sag comes down 7.5 mm, then
+measure again" — rather than a turn count, which would need the collar's
+thread pitch and the linkage ratio, two numbers that get guessed more often
+than measured.
 
 **Rider feedback.** Pick what the bike actually did — *front pushes wide on
 entry*, *rear packs down over a series of bumps* — and get a ranked list of

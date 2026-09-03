@@ -53,10 +53,19 @@ export interface SagResult {
    * spring once rider sag has been dialled to target with preload.
    */
   springVerdictReliable: boolean
-  /** Preload to add (+) or remove (−), in mm at the spring. */
-  preloadChangeMm?: number
-  /** The same change expressed in turns of the adjuster, when the pitch is known. */
-  preloadChangeTurns?: number
+  /**
+   * How far rider sag has to move to reach the middle of its window, in mm
+   * at the wheel. Positive means the bike is sagging too much and wants more
+   * preload.
+   *
+   * Deliberately not converted into turns of the collar: that needs the
+   * adjuster's thread pitch and, at the rear, the linkage ratio — two
+   * numbers that vary by machine and are usually guessed. A wrong guess
+   * produces a confident instruction that is simply wrong, whereas a
+   * distance to close is checked the way sag is always checked, by
+   * measuring it again.
+   */
+  sagChangeMm?: number
   notes: string[]
 }
 
@@ -70,17 +79,6 @@ export function statusFor(value: number, [min, max]: SagWindow): RangeStatus {
 
 function midpoint([min, max]: SagWindow): number {
   return (min + max) / 2
-}
-
-/**
- * Rear wheel sag responds to shock preload through the linkage: one
- * millimetre at the shock spring is `motionRatio` millimetres at the wheel.
- * The fork spring acts on the wheel one-to-one along its own axis.
- */
-export function motionRatioFor(bike: Bike | undefined, axle: Axle): number {
-  if (axle === 'front') return 1
-  const ratio = bike?.shock.motionRatio
-  return ratio && ratio > 0 ? ratio : 1
 }
 
 export function computeSag(m: SagMeasurement): { riderSag: number; freeSag?: number } {
@@ -115,21 +113,13 @@ export function targetsFor(targets: SagTargets, axle: Axle): { rider: SagWindow;
     : { rider: targets.rearRider, free: targets.rearFree }
 }
 
-/**
- * Diagnose one end of the bike.
- *
- * `preloadMmPerTurn` is the thread pitch of the preload adjuster; supply it
- * to get the correction in turns as well as millimetres.
- */
+/** Diagnose one end of the bike. */
 export function analyseSag(args: {
   axle: Axle
   measurement: SagMeasurement
   targets: SagTargets
-  motionRatio?: number
-  preloadMmPerTurn?: number
 }): SagResult {
   const { axle, measurement, targets } = args
-  const motionRatio = args.motionRatio && args.motionRatio > 0 ? args.motionRatio : 1
   const { riderSag, freeSag } = computeSag(measurement)
   const windows = targetsFor(targets, axle)
 
@@ -138,17 +128,13 @@ export function analyseSag(args: {
 
   const notes: string[] = []
 
-  // Preload correction: sag moves one-for-one against preload at the spring,
-  // scaled through the linkage on the way to the wheel.
-  let preloadChangeMm: number | undefined
-  let preloadChangeTurns: number | undefined
+  // How far sag has to move, at the wheel. Which way to turn the collar
+  // follows from the sign; how far to turn it is a question for the collar
+  // and a tape measure, not for arithmetic on numbers nobody measured.
+  let sagChangeMm: number | undefined
   if (riderSagStatus !== 'ok') {
     const wanted = midpoint(windows.rider)
-    const wheelDelta = riderSag - wanted // positive: sagging too much
-    preloadChangeMm = wheelDelta / motionRatio
-    if (args.preloadMmPerTurn && args.preloadMmPerTurn > 0) {
-      preloadChangeTurns = preloadChangeMm / args.preloadMmPerTurn
-    }
+    sagChangeMm = riderSag - wanted // positive: sagging too much
     notes.push(
       riderSagStatus === 'high'
         ? `Rider sag is ${fmt(riderSag - windows.rider[1])} mm over the top of the window — add preload.`
@@ -199,43 +185,34 @@ export function analyseSag(args: {
     result.freeSagTarget = windows.free
     result.freeSagStatus = freeSagStatus
   }
-  if (preloadChangeMm !== undefined) result.preloadChangeMm = preloadChangeMm
-  if (preloadChangeTurns !== undefined) result.preloadChangeTurns = preloadChangeTurns
+  if (sagChangeMm !== undefined) result.sagChangeMm = sagChangeMm
   return result
 }
 
-/** Convenience wrapper that pulls the hardware details off a bike. */
+/** Convenience wrapper that takes the sag windows off a bike. */
 export function analyseSagForBike(
   bike: Bike,
   axle: Axle,
   measurement: SagMeasurement,
 ): SagResult {
-  const adjuster = axle === 'front' ? bike.fork.preload : bike.shock.preload
-  const args: Parameters<typeof analyseSag>[0] = {
-    axle,
-    measurement,
-    targets: bike.sagTargets,
-    motionRatio: motionRatioFor(bike, axle),
-  }
-  if (adjuster.mmPerTurn) args.preloadMmPerTurn = adjuster.mmPerTurn
-  return analyseSag(args)
+  return analyseSag({ axle, measurement, targets: bike.sagTargets })
 }
 
 /**
- * How to say a preload correction out loud. Positive millimetres mean the
- * bike is sitting too low and needs more preload.
+ * How to say the correction out loud.
+ *
+ * It names the direction and the distance to close, and stops there. Turning
+ * that into "one and a half turns" needs the collar's thread pitch and the
+ * linkage ratio, and a wrong assumption about either sends the rider
+ * confidently the wrong distance. Re-measuring is both quicker and correct.
  */
 export function describePreloadChange(result: SagResult): string | null {
-  if (result.preloadChangeMm === undefined) return null
-  const mm = result.preloadChangeMm
+  if (result.sagChangeMm === undefined) return null
+  const mm = result.sagChangeMm
   if (Math.abs(mm) < 0.05) return null
-  const direction = mm > 0 ? 'Add' : 'Remove'
-  const turns = result.preloadChangeTurns
-  const amount =
-    turns === undefined
-      ? `${fmt(Math.abs(mm))} mm of preload`
-      : `${fmt(Math.abs(mm))} mm of preload (${fmt(Math.abs(turns), 2)} turns)`
-  return `${direction} ${amount}.`
+  return mm > 0
+    ? `Add preload until rider sag comes down ${fmt(mm)} mm, then measure again.`
+    : `Back preload off until rider sag rises ${fmt(-mm)} mm, then measure again.`
 }
 
 function fmt(value: number, decimals = 1): string {

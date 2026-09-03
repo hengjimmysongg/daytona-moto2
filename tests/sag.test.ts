@@ -40,7 +40,7 @@ describe('analyseSag', () => {
     expect(result.freeSagStatus).toBe('ok')
     expect(result.springVerdict).toBe('ok')
     expect(result.springVerdictReliable).toBe(true)
-    expect(result.preloadChangeMm).toBeUndefined()
+    expect(result.sagChangeMm).toBeUndefined()
   })
 
   it('asks for preload when the bike sags too far, aiming at the middle of the window', () => {
@@ -48,14 +48,12 @@ describe('analyseSag', () => {
       axle: 'front',
       measurement: { extended: 500, withRider: 460 },
       targets: TRACK_SAG_TARGETS,
-      preloadMmPerTurn: 1,
     })
     expect(result.riderSag).toBe(40)
     expect(result.riderSagStatus).toBe('high')
     // Window is 30–35, so the target is 32.5 and the fork is 7.5 mm low.
-    expect(result.preloadChangeMm).toBeCloseTo(7.5, 6)
-    expect(result.preloadChangeTurns).toBeCloseTo(7.5, 6)
-    expect(describePreloadChange(result)).toMatch(/^Add 7\.5 mm of preload/)
+    expect(result.sagChangeMm).toBeCloseTo(7.5, 6)
+    expect(describePreloadChange(result)).toMatch(/^Add preload until rider sag comes down 7\.5 mm/)
   })
 
   it('asks for preload to come out when the bike sits too high', () => {
@@ -63,26 +61,23 @@ describe('analyseSag', () => {
       axle: 'front',
       measurement: { extended: 500, withRider: 480 },
       targets: TRACK_SAG_TARGETS,
-      preloadMmPerTurn: 1,
     })
     expect(result.riderSagStatus).toBe('low')
-    expect(result.preloadChangeMm).toBeCloseTo(-12.5, 6)
-    expect(describePreloadChange(result)).toMatch(/^Remove 12\.5 mm/)
+    expect(result.sagChangeMm).toBeCloseTo(-12.5, 6)
+    expect(describePreloadChange(result)).toMatch(/^Back preload off until rider sag rises 12\.5 mm/)
   })
 
-  it('divides the rear correction by the linkage ratio', () => {
+  it('reports the rear correction at the wheel, where it was measured', () => {
     const result = analyseSag({
       axle: 'rear',
       measurement: { extended: 400, withRider: 365 },
       targets: TRACK_SAG_TARGETS,
-      motionRatio: 2.5,
-      preloadMmPerTurn: 1.5,
     })
     expect(result.riderSag).toBe(35)
-    // 35 mm of wheel sag against a 27.5 mm target: 7.5 mm at the wheel is
-    // 3 mm at the shock spring, which is two turns of a 1.5 mm collar.
-    expect(result.preloadChangeMm).toBeCloseTo(3, 6)
-    expect(result.preloadChangeTurns).toBeCloseTo(2, 6)
+    // 35 mm of wheel sag against a 27.5 mm target. No linkage ratio is
+    // applied, so the number stays the one the tape measure will confirm.
+    expect(result.sagChangeMm).toBeCloseTo(7.5, 6)
+    expect(describePreloadChange(result)).toContain('measure again')
   })
 
   it('reads a short free sag as a spring that is too soft', () => {
