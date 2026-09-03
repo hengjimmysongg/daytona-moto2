@@ -154,14 +154,16 @@ describe('columns', () => {
   it('names the day, the bike and the session', () => {
     const data = garage()
     data.trackDays.push(day({ layout: 'Motorcycle course' }))
-    data.sessions.push(session({ number: 3, laps: 9, bestLap: 112.34 }))
+    data.sessions.push(session({ number: 3, laps: 9, bestLap: 112.34, averageLap: 114.9 }))
     const csv = trackDayCsv(data, 'day_1')
     expect(cell(csv, 'Date')).toBe('2026-03-07')
     expect(cell(csv, 'Circuit')).toBe('Daytona')
     expect(cell(csv, 'Bike')).toBe('Daytona 675R')
     expect(cell(csv, 'Session')).toBe('3')
     expect(cell(csv, 'Laps')).toBe('9')
-    expect(cell(csv, 'Best lap')).toBe('1:52.34')
+    expect(cell(csv, 'Fastest lap')).toBe('1:52.34')
+    expect(cell(csv, 'Average lap')).toBe('1:54.90')
+    expect(cell(csv, 'Average lap (s)')).toBe('114.9')
   })
 })
 

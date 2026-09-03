@@ -102,7 +102,9 @@ export function SessionView({
         />
       </Card>
 
-      <LapCard session={session} previous={previous} onChange={patch} />
+      {/* Keyed so switching session remounts the lap fields, which hold
+          what the rider is mid-way through typing. */}
+      <LapCard key={session.id} session={session} previous={previous} onChange={patch} />
 
       <SetupCard
         session={session}
@@ -288,6 +290,51 @@ function ConditionsFields({
 
 /* ------------------------------------------------------------------ */
 
+/**
+ * A lap time, typed the way a rider writes one.
+ *
+ * The text the rider is typing is held locally and only committed when it
+ * parses, so a half-typed `1:5` is not thrown away or read as five seconds.
+ */
+function LapTimeField({
+  label,
+  hint,
+  value,
+  onChange,
+}: {
+  label: string
+  hint?: string
+  value: number | undefined
+  onChange: (seconds: number | undefined) => void
+}) {
+  const [text, setText] = useState(value === undefined ? '' : formatLapTime(value))
+
+  return (
+    <Field label={label} {...(hint ? { hint } : {})}>
+      {(control) => (
+        <input
+          {...control}
+          type="text"
+          inputMode="decimal"
+          className="mono"
+          placeholder="1:52.34"
+          value={text}
+          onChange={(event) => {
+            const typed = event.target.value
+            setText(typed)
+            if (typed.trim() === '') {
+              onChange(undefined)
+              return
+            }
+            const parsed = parseLapTime(typed)
+            if (parsed !== null) onChange(parsed)
+          }}
+        />
+      )}
+    </Field>
+  )
+}
+
 function LapCard({
   session,
   previous,
@@ -297,51 +344,54 @@ function LapCard({
   previous: Session | undefined
   onChange: (changes: Partial<Session>) => void
 }) {
-  const [bestText, setBestText] = useState(
-    session.bestLap === undefined ? '' : formatLapTime(session.bestLap),
-  )
-  const delta =
+  const bestDelta =
     session.bestLap !== undefined && previous?.bestLap !== undefined
       ? session.bestLap - previous.bestLap
       : undefined
+  const averageDelta =
+    session.averageLap !== undefined && previous?.averageLap !== undefined
+      ? session.averageLap - previous.averageLap
+      : undefined
 
   return (
-    <Card title="Laps">
+    <Card
+      title="Laps"
+      hint="One quick lap says what the bike can do. The average says what it did all session, which is the number a setup change has to move."
+    >
       <div className="grid grid--two">
-        <Field label="Best lap" >
-          {(control) => (
-            <input
-              {...control}
-              type="text"
-              inputMode="decimal"
-              className="mono"
-              placeholder="1:52.34"
-              value={bestText}
-              onChange={(event) => {
-                const text = event.target.value
-                setBestText(text)
-                if (text.trim() === '') {
-                  onChange({ bestLap: undefined })
-                  return
-                }
-                const parsed = parseLapTime(text)
-                if (parsed !== null) onChange({ bestLap: parsed })
-              }}
-            />
-          )}
-        </Field>
-        <NumberField
-          label="Laps"
-          value={session.laps === undefined ? '' : String(session.laps)}
-          onChange={(laps) => onChange({ laps })}
+        <LapTimeField
+          label="Fastest lap"
+          value={session.bestLap}
+          onChange={(bestLap) => onChange({ bestLap })}
+        />
+        <LapTimeField
+          label="Average lap"
+          hint="Your representative pace"
+          value={session.averageLap}
+          onChange={(averageLap) => onChange({ averageLap })}
         />
       </div>
-      {delta !== undefined && (
+      <NumberField
+        label="Laps"
+        value={session.laps === undefined ? '' : String(session.laps)}
+        onChange={(laps) => onChange({ laps })}
+      />
+
+      {bestDelta !== undefined && (
         <Readout
-          label="Against last session"
-          value={formatLapDelta(delta)}
-          trailing={<Badge tone={delta < 0 ? 'ok' : delta > 0 ? 'warn' : 'muted'}>
-            {delta < 0 ? 'Quicker' : delta > 0 ? 'Slower' : 'Level'}
+          label="Fastest, against last session"
+          value={formatLapDelta(bestDelta)}
+          trailing={<Badge tone={bestDelta < 0 ? 'ok' : bestDelta > 0 ? 'warn' : 'muted'}>
+            {bestDelta < 0 ? 'Quicker' : bestDelta > 0 ? 'Slower' : 'Level'}
+          </Badge>}
+        />
+      )}
+      {averageDelta !== undefined && (
+        <Readout
+          label="Average, against last session"
+          value={formatLapDelta(averageDelta)}
+          trailing={<Badge tone={averageDelta < 0 ? 'ok' : averageDelta > 0 ? 'warn' : 'muted'}>
+            {averageDelta < 0 ? 'Quicker' : averageDelta > 0 ? 'Slower' : 'Level'}
           </Badge>}
         />
       )}

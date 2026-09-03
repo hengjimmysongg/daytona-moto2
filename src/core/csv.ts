@@ -128,8 +128,11 @@ function columns(data: GarageData): Column[] {
     { header: () => 'Bike', value: (row) => row.bike?.name ?? '' },
     { header: () => 'Session', value: (row) => String(row.session.number) },
     { header: () => 'Laps', value: (row) => num(row.session.laps, 0) },
-    { header: () => 'Best lap', value: (row) => (row.session.bestLap ? formatLapTime(row.session.bestLap) : '') },
-    { header: () => 'Best lap (s)', value: (row) => num(row.session.bestLap, 2) },
+    // Both paces, and both in seconds beside them: `1:52.34` is what a rider
+    // reads, and a spreadsheet cannot sort or average it.
+    { header: () => 'Fastest lap', value: (row) => (row.session.bestLap ? formatLapTime(row.session.bestLap) : '') },
+    { header: () => 'Fastest lap (s)', value: (row) => num(row.session.bestLap, 2) },
+    { header: () => 'Average lap', value: (row) => (row.session.averageLap ? formatLapTime(row.session.averageLap) : '') },
     { header: () => 'Average lap (s)', value: (row) => num(row.session.averageLap, 2) },
     {
       header: (prefs) => `Air temp (°${prefs.temperatureUnit})`,
