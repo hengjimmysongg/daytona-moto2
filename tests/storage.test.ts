@@ -157,6 +157,22 @@ describe('import and export', () => {
     expect(imported.preferences.temperatureUnit).toBe(defaultPreferences().temperatureUnit)
   })
 
+  it('defaults the suspension unit to clicks, counted hardest-first', () => {
+    expect(defaultPreferences().suspensionUnit).toBe('clicks')
+    expect(defaultPreferences().adjusterDirection).toBe('hard-to-soft')
+  })
+
+  it('keeps a suspension unit and recording direction a file set', () => {
+    const imported = importGarage(
+      JSON.stringify({
+        version: 1,
+        preferences: { suspensionUnit: 'half-turns', adjusterDirection: 'soft-to-hard' },
+      }),
+    )
+    expect(imported.preferences.suspensionUnit).toBe('half-turns')
+    expect(imported.preferences.adjusterDirection).toBe('soft-to-hard')
+  })
+
   it('suggests a dated filename', () => {
     expect(suggestExportFilename(new Date('2026-03-07T12:00:00Z'))).toBe('daytona-moto2-2026-03-07.json')
   })

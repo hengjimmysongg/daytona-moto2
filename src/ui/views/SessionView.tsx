@@ -22,7 +22,15 @@ import {
 } from '../format'
 import { formatLapDelta, formatLapTime, parseLapTime } from '../../core/laptime'
 import { buildAdvice, FEEDBACK_CATALOGUE, PHASES } from '../../core/advice'
-import { diffSetups, fieldsInGroup, validateSetup } from '../../core/setup'
+import {
+  adjusterConvention,
+  adjusterStep,
+  adjusterUnit,
+  diffSetups,
+  fieldsInGroup,
+  validateSetup,
+} from '../../core/setup'
+import { suspensionUnitLabel } from '../../core/units'
 import { pressureRise, recommendFromHistory, allWearOptions, wearGuidance } from '../../core/tyres'
 import { previousSession, sessionsForDay } from '../../core/storage'
 import { csvFilename, sessionCsv } from '../../core/csv'
@@ -81,7 +89,7 @@ export function SessionView({
       ),
     }))
 
-  const changes = previous ? diffSetups(previous.setup, session.setup) : []
+  const changes = previous ? diffSetups(previous.setup, session.setup, data.preferences) : []
   const warnings = bike ? validateSetup(bike, session.setup) : []
 
   return (
@@ -110,6 +118,7 @@ export function SessionView({
         session={session}
         previous={previous}
         bike={bike}
+        prefs={data.preferences}
         onChange={(setup) => patch({ setup })}
       />
 
@@ -405,24 +414,29 @@ function SetupCard({
   session,
   previous,
   bike,
+  prefs,
   onChange,
 }: {
   session: Session
   previous: Session | undefined
   bike: Bike | undefined
+  prefs: Preferences
   onChange: (setup: SuspensionSetup) => void
 }) {
+  const damping = suspensionUnitLabel(prefs.suspensionUnit)
+  const direction =
+    prefs.adjusterDirection === 'soft-to-hard'
+      ? 'counted in from fully open, so more is firmer'
+      : 'counted out from fully closed, so more is softer'
   return (
-    <Card
-      title="Suspension"
-      hint="Damping in clicks out from fully closed. Preload in turns in from fully soft."
-    >
+    <Card title="Suspension" hint={`Damping in ${damping}, ${direction}. Preload in turns.`}>
       <SectionLabel>Fork</SectionLabel>
       <SetupGroupFields
         group="fork"
         setup={session.setup}
         previousSetup={previous?.setup}
         bike={bike}
+        prefs={prefs}
         onChange={onChange}
       />
       <SectionLabel>Shock</SectionLabel>
@@ -431,6 +445,7 @@ function SetupCard({
         setup={session.setup}
         previousSetup={previous?.setup}
         bike={bike}
+        prefs={prefs}
         onChange={onChange}
       />
     </Card>
@@ -442,29 +457,32 @@ function SetupGroupFields({
   setup,
   previousSetup,
   bike,
+  prefs,
   onChange,
 }: {
   group: 'fork' | 'shock'
   setup: SuspensionSetup
   previousSetup: SuspensionSetup | undefined
   bike: Bike | undefined
+  prefs: Preferences
   onChange: (setup: SuspensionSetup) => void
 }) {
   return (
     <div className="grid grid--two">
       {fieldsInGroup(group).map((field) => {
         const spec = bike ? field.adjuster?.(bike) : undefined
+        const convention = adjusterConvention(field, prefs)
         return (
           <Stepper
             key={field.key}
             label={field.shortLabel}
-            {...(field.convention ? { hint: field.convention } : {})}
+            {...(convention ? { hint: convention } : {})}
             value={field.get(setup)}
             baseline={previousSetup ? field.get(previousSetup) : undefined}
-            step={field.step}
+            step={adjusterStep(field, prefs)}
             min={field.key === 'shock.rideHeight' || field.key === 'fork.height' ? -50 : 0}
             max={spec?.range}
-            unit={field.unit}
+            unit={adjusterUnit(field, prefs)}
             onChange={(value) => onChange(field.set(setup, value))}
           />
         )

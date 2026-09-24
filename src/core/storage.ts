@@ -34,6 +34,8 @@ export function defaultPreferences(): Preferences {
     pressureUnit: 'psi',
     temperatureUnit: 'C',
     massUnit: 'kg',
+    suspensionUnit: 'clicks',
+    adjusterDirection: 'hard-to-soft',
     // Starting points only — replace with the hot pressures from your own
     // tyre's data sheet, which is the number that actually matters.
     targetHotPressure: { front: 2.2, rear: 1.9 },
@@ -181,6 +183,8 @@ function mergePreferences(base: Preferences, raw: unknown): Preferences {
     pressureUnit: incoming.pressureUnit ?? base.pressureUnit,
     temperatureUnit: incoming.temperatureUnit ?? base.temperatureUnit,
     massUnit: incoming.massUnit ?? base.massUnit,
+    suspensionUnit: incoming.suspensionUnit ?? base.suspensionUnit,
+    adjusterDirection: incoming.adjusterDirection ?? base.adjusterDirection,
     targetHotPressure: {
       front: incoming.targetHotPressure?.front ?? base.targetHotPressure.front,
       rear: incoming.targetHotPressure?.rear ?? base.targetHotPressure.rear,

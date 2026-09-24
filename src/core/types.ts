@@ -14,7 +14,13 @@
  * and lives in `Preferences`, never in the data itself.
  */
 
-import type { MassUnit, PressureUnit, TemperatureUnit } from './units.js'
+import type {
+  AdjusterDirection,
+  MassUnit,
+  PressureUnit,
+  SuspensionUnit,
+  TemperatureUnit,
+} from './units.js'
 
 /** Milliseconds since epoch. */
 export type Timestamp = number
@@ -273,6 +279,13 @@ export interface Preferences {
    * nothing and invite a unit mix-up in the one place it would hurt most.
    */
   massUnit: MassUnit
+  /**
+   * How the rider counts a damping adjuster: clicks, turns or half turns.
+   * A recording choice only; it never changes a stored number.
+   */
+  suspensionUnit: SuspensionUnit
+  /** Which way damping numbers run when recording — see `AdjusterDirection`. */
+  adjusterDirection: AdjusterDirection
   /** Hot pressure the rider is aiming for, bar, per axle. */
   targetHotPressure: { front: number; rear: number }
 }

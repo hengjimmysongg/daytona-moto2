@@ -20,8 +20,9 @@
  * the stroke.
  */
 
-import type { AdjusterSpec, Bike, SuspensionSetup } from './types.js'
+import type { AdjusterSpec, Bike, Preferences, SuspensionSetup } from './types.js'
 import { EMPTY_SETUP } from './types.js'
+import { suspensionUnitLabel, suspensionUnitStep } from './units.js'
 
 export type SetupGroup = 'fork' | 'shock' | 'sag' | 'geometry'
 
@@ -41,6 +42,12 @@ export interface SetupField {
   step: number
   /** Short reminder of which way the numbers run. */
   convention?: string
+  /**
+   * A damping adjuster with a firmer/softer axis. Only these follow the
+   * rider's chosen adjuster unit and recording direction; preload and
+   * geometry do not.
+   */
+  hardnessAxis?: boolean
   /** What the bike does when this number goes up. */
   increaseEffect?: string
   /** What the bike does when this number goes down. */
@@ -70,6 +77,7 @@ export const SETUP_FIELDS: SetupField[] = [
     label: 'Fork compression',
     shortLabel: 'Compression',
     group: 'fork',
+    hardnessAxis: true,
     unit: 'clicks',
     step: 1,
     convention: 'clicks out from fully closed',
@@ -84,6 +92,7 @@ export const SETUP_FIELDS: SetupField[] = [
     label: 'Fork rebound',
     shortLabel: 'Rebound',
     group: 'fork',
+    hardnessAxis: true,
     unit: 'clicks',
     step: 1,
     convention: 'clicks out from fully closed',
@@ -138,6 +147,7 @@ export const SETUP_FIELDS: SetupField[] = [
     label: 'Shock low-speed compression',
     shortLabel: 'Low-speed compression',
     group: 'shock',
+    hardnessAxis: true,
     unit: 'clicks',
     step: 1,
     convention: 'clicks out from fully closed',
@@ -152,6 +162,7 @@ export const SETUP_FIELDS: SetupField[] = [
     label: 'Shock high-speed compression',
     shortLabel: 'High-speed compression',
     group: 'shock',
+    hardnessAxis: true,
     unit: 'turns',
     step: 0.25,
     convention: 'turns out from fully closed',
@@ -166,6 +177,7 @@ export const SETUP_FIELDS: SetupField[] = [
     label: 'Shock rebound',
     shortLabel: 'Rebound',
     group: 'shock',
+    hardnessAxis: true,
     unit: 'clicks',
     step: 1,
     convention: 'clicks out from fully closed',
@@ -213,6 +225,46 @@ export function fieldsInGroup(group: SetupGroup): SetupField[] {
 }
 
 /* ------------------------------------------------------------------ */
+/* Adjuster units and direction                                        */
+/* ------------------------------------------------------------------ */
+
+/** The two preferences that change how an adjuster is recorded and read. */
+export type AdjusterDisplay = Pick<Preferences, 'suspensionUnit' | 'adjusterDirection'>
+
+/** The app's original convention: clicks, counted out from fully closed. */
+const DEFAULT_DISPLAY: AdjusterDisplay = {
+  suspensionUnit: 'clicks',
+  adjusterDirection: 'hard-to-soft',
+}
+
+/**
+ * The unit word to show for a field. Only the click adjusters follow the
+ * rider's choice of clicks / turns / half turns; preload stays in turns and
+ * geometry stays in millimetres, because those are not what that choice is
+ * asking about.
+ */
+export function adjusterUnit(field: SetupField, display: AdjusterDisplay = DEFAULT_DISPLAY): string {
+  return field.unit === 'clicks' ? suspensionUnitLabel(display.suspensionUnit) : field.unit
+}
+
+/** One nudge of a field's control, in the rider's chosen unit. */
+export function adjusterStep(field: SetupField, display: AdjusterDisplay = DEFAULT_DISPLAY): number {
+  return field.unit === 'clicks' ? suspensionUnitStep(display.suspensionUnit) : field.step
+}
+
+/** The convention line for a field, honouring the chosen recording direction. */
+export function adjusterConvention(
+  field: SetupField,
+  display: AdjusterDisplay = DEFAULT_DISPLAY,
+): string | undefined {
+  if (!field.hardnessAxis) return field.convention
+  const unit = adjusterUnit(field, display)
+  return display.adjusterDirection === 'soft-to-hard'
+    ? `${unit} in from fully open — more is firmer`
+    : `${unit} out from fully closed — more is softer`
+}
+
+/* ------------------------------------------------------------------ */
 /* Diffing                                                             */
 /* ------------------------------------------------------------------ */
 
@@ -228,7 +280,7 @@ export interface SetupChange {
   effect?: string
 }
 
-function formatAmount(value: number, unit: SetupField['unit']): string {
+function formatAmount(value: number, unit: string): string {
   const rounded = Math.round(value * 100) / 100
   const text = Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2).replace(/0$/, '')
   const plural = Math.abs(rounded) === 1 ? unit.replace(/s$/, '') : unit
@@ -236,7 +288,11 @@ function formatAmount(value: number, unit: SetupField['unit']): string {
 }
 
 /** Every field that differs between two setups, in display order. */
-export function diffSetups(before: SuspensionSetup, after: SuspensionSetup): SetupChange[] {
+export function diffSetups(
+  before: SuspensionSetup,
+  after: SuspensionSetup,
+  display: AdjusterDisplay = DEFAULT_DISPLAY,
+): SetupChange[] {
   const changes: SetupChange[] = []
   for (const field of SETUP_FIELDS) {
     const from = field.get(before)
@@ -244,20 +300,26 @@ export function diffSetups(before: SuspensionSetup, after: SuspensionSetup): Set
     if (from === to) continue
     if (from === undefined && to === undefined) continue
 
+    const unit = adjusterUnit(field, display)
     const delta = from !== undefined && to !== undefined ? to - from : undefined
     let summary: string
     if (from === undefined) {
-      summary = `${field.label} set to ${formatAmount(to as number, field.unit)}`
+      summary = `${field.label} set to ${formatAmount(to as number, unit)}`
     } else if (to === undefined) {
-      summary = `${field.label} cleared (was ${formatAmount(from, field.unit)})`
+      summary = `${field.label} cleared (was ${formatAmount(from, unit)})`
     } else {
-      summary = `${field.label} ${trim(from)} → ${trim(to)} ${field.unit}`
+      summary = `${field.label} ${trim(from)} → ${trim(to)} ${unit}`
     }
 
     const change: SetupChange = { field, from, to, delta, summary }
     if (delta !== undefined && delta !== 0) {
-      const effect = delta > 0 ? field.increaseEffect : field.decreaseEffect
-      if (effect) change.effect = `${formatAmount(Math.abs(delta), field.unit)} — ${effect}`
+      // On a damping adjuster recorded from fully open, a bigger number is
+      // firmer, so the effect of an increase and a decrease swap over.
+      const swap = (field.hardnessAxis ?? false) && display.adjusterDirection === 'soft-to-hard'
+      const onIncrease = swap ? field.decreaseEffect : field.increaseEffect
+      const onDecrease = swap ? field.increaseEffect : field.decreaseEffect
+      const effect = delta > 0 ? onIncrease : onDecrease
+      if (effect) change.effect = `${formatAmount(Math.abs(delta), unit)} — ${effect}`
     }
     changes.push(change)
   }

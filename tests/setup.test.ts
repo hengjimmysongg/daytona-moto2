@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
+  adjusterConvention,
+  adjusterStep,
   cloneSetup,
   diffSetups,
   fieldsInGroup,
@@ -154,5 +156,57 @@ describe('emptySetup', () => {
     const a = emptySetup()
     a.fork.compression = 10
     expect(emptySetup().fork.compression).toBeUndefined()
+  })
+})
+
+describe('adjuster unit and direction', () => {
+  const hardClicks = { suspensionUnit: 'clicks', adjusterDirection: 'hard-to-soft' } as const
+  const softClicks = { suspensionUnit: 'clicks', adjusterDirection: 'soft-to-hard' } as const
+
+  it('shows a click adjuster in the rider’s chosen unit', () => {
+    const after = { ...base, fork: { ...base.fork, compression: 10 } }
+    expect(diffSetups(base, after, { suspensionUnit: 'turns', adjusterDirection: 'hard-to-soft' })[0]!.summary).toBe(
+      'Fork compression 12 → 10 turns',
+    )
+    expect(
+      diffSetups(base, after, { suspensionUnit: 'half-turns', adjusterDirection: 'hard-to-soft' })[0]!.summary,
+    ).toBe('Fork compression 12 → 10 half turns')
+  })
+
+  it('leaves preload in turns whatever unit the clickers are counted in', () => {
+    const after = { ...base, fork: { ...base.fork, preload: 5 } }
+    expect(diffSetups(base, after, { suspensionUnit: 'half-turns', adjusterDirection: 'hard-to-soft' })[0]!.summary).toBe(
+      'Fork preload 4 → 5 turns',
+    )
+  })
+
+  it('reverses firmer/softer when the adjuster is recorded from fully open', () => {
+    const after = { ...base, fork: { ...base.fork, compression: 10 } }
+    // Counted out from closed, dropping two clicks is more damping — firmer.
+    expect(diffSetups(base, after, hardClicks)[0]!.effect).toMatch(/firmer front/)
+    // Counted in from open, the same smaller number is less damping — softer.
+    expect(diffSetups(base, after, softClicks)[0]!.effect).toMatch(/softer front/)
+  })
+
+  it('does not reverse a non-damping field like ride height', () => {
+    const after = { ...base, shock: { ...base.shock, rideHeight: 2 } }
+    expect(diffSetups(base, after, hardClicks)[0]!.effect).toBe(
+      diffSetups(base, after, softClicks)[0]!.effect,
+    )
+  })
+
+  it('writes the convention for the chosen unit and direction', () => {
+    const field = SETUP_FIELDS_BY_KEY.get('fork.compression')!
+    expect(adjusterConvention(field, { suspensionUnit: 'turns', adjusterDirection: 'hard-to-soft' })).toBe(
+      'turns out from fully closed — more is softer',
+    )
+    expect(adjusterConvention(field, softClicks)).toBe('clicks in from fully open — more is firmer')
+  })
+
+  it('steps clicks whole, turns by a quarter, half turns by a half', () => {
+    const field = SETUP_FIELDS_BY_KEY.get('fork.compression')!
+    expect(adjusterStep(field, hardClicks)).toBe(1)
+    expect(adjusterStep(field, { suspensionUnit: 'turns', adjusterDirection: 'hard-to-soft' })).toBe(0.25)
+    expect(adjusterStep(field, { suspensionUnit: 'half-turns', adjusterDirection: 'hard-to-soft' })).toBe(0.5)
   })
 })
