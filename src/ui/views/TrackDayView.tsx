@@ -359,7 +359,7 @@ function SessionRow({
   onClick: () => void
 }) {
   const prefs = data.preferences
-  const changes = previous ? diffSetups(previous.setup, session.setup) : []
+  const changes = previous ? diffSetups(previous.setup, session.setup, prefs) : []
   const frontRise = pressureRise(session.tyres.front)
   const rearRise = pressureRise(session.tyres.rear)
 

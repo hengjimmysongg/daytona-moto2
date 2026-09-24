@@ -12,6 +12,21 @@ export type TemperatureUnit = 'C' | 'F'
 export type LengthUnit = 'mm' | 'in'
 export type MassUnit = 'kg' | 'lb'
 
+/**
+ * How a rider counts a suspension damping adjuster. Purely a recording and
+ * display choice — the stored number is whatever the rider dialled, in the
+ * unit they count in.
+ */
+export type SuspensionUnit = 'clicks' | 'turns' | 'half-turns'
+
+/**
+ * Which way a damping adjuster's numbers run when recording:
+ *  - `hard-to-soft`: counted out from fully closed, so more is softer. This is
+ *    the workshop default and the app's original behaviour.
+ *  - `soft-to-hard`: counted in from fully open, so more is firmer.
+ */
+export type AdjusterDirection = 'hard-to-soft' | 'soft-to-hard'
+
 /** Standard atmospheric pressure, used to convert gauge <-> absolute. */
 export const ATMOSPHERIC_BAR = 1.01325
 
@@ -152,4 +167,25 @@ export function parseNumber(input: string): number | null {
   if (cleaned === '' || cleaned === '-' || cleaned === '+' || cleaned === '.') return null
   const value = Number(cleaned)
   return Number.isFinite(value) ? value : null
+}
+
+/* ------------------------------------------------------------------ */
+/* Suspension adjuster units                                           */
+/* ------------------------------------------------------------------ */
+
+/** The word shown next to a damping adjuster, for the rider's chosen unit. */
+export function suspensionUnitLabel(unit: SuspensionUnit): string {
+  return unit === 'half-turns' ? 'half turns' : unit
+}
+
+/** One nudge of a damping adjuster control, in the rider's chosen unit. */
+export function suspensionUnitStep(unit: SuspensionUnit): number {
+  switch (unit) {
+    case 'clicks':
+      return 1
+    case 'turns':
+      return 0.25
+    case 'half-turns':
+      return 0.5
+  }
 }

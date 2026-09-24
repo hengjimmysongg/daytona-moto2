@@ -161,27 +161,29 @@ function UnitsCard({
   return (
     <Card
       title="Units and targets"
-      hint="Everything is stored the same way underneath, so switching units never changes a recorded number."
+      hint="Temperatures are in °C and pressures in psi. Everything is stored the same way underneath, so a unit choice never changes a recorded number."
     >
       <div className="grid grid--two">
         <SelectField
-          label="Pressure"
-          value={prefs.pressureUnit}
+          label="Suspension adjuster"
+          hint="How you count your clickers."
+          value={prefs.suspensionUnit}
           options={[
-            { value: 'psi', label: 'psi' },
-            { value: 'bar', label: 'bar' },
-            { value: 'kPa', label: 'kPa' },
+            { value: 'clicks', label: 'Clicks' },
+            { value: 'turns', label: 'Turns' },
+            { value: 'half-turns', label: 'Half turns' },
           ]}
-          onChange={(pressureUnit) => onChange({ ...prefs, pressureUnit })}
+          onChange={(suspensionUnit) => onChange({ ...prefs, suspensionUnit })}
         />
         <SelectField
-          label="Temperature"
-          value={prefs.temperatureUnit}
+          label="Recording direction"
+          hint="Which end of the adjuster is zero."
+          value={prefs.adjusterDirection}
           options={[
-            { value: 'C', label: '°C' },
-            { value: 'F', label: '°F' },
+            { value: 'hard-to-soft', label: 'Hardest → softest' },
+            { value: 'soft-to-hard', label: 'Softest → hardest' },
           ]}
-          onChange={(temperatureUnit) => onChange({ ...prefs, temperatureUnit })}
+          onChange={(adjusterDirection) => onChange({ ...prefs, adjusterDirection })}
         />
         <SelectField
           label="Rider weight"

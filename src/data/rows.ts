@@ -25,7 +25,13 @@ import type {
   TyreRun,
   TyreWear,
 } from '../core/types.js'
-import type { MassUnit, PressureUnit, TemperatureUnit } from '../core/units.js'
+import type {
+  AdjusterDirection,
+  MassUnit,
+  PressureUnit,
+  SuspensionUnit,
+  TemperatureUnit,
+} from '../core/units.js'
 
 /** A row as PostgREST hands it back. */
 export type Row = Record<string, unknown>
@@ -190,6 +196,9 @@ export function toPreferences(row: Row, fallback: Preferences): Preferences {
     pressureUnit: (text(row.pressure_unit) as PressureUnit) ?? fallback.pressureUnit,
     temperatureUnit: (text(row.temperature_unit) as TemperatureUnit) ?? fallback.temperatureUnit,
     massUnit: (text(row.mass_unit) as MassUnit) ?? fallback.massUnit,
+    suspensionUnit: (text(row.suspension_unit) as SuspensionUnit) ?? fallback.suspensionUnit,
+    adjusterDirection:
+      (text(row.adjuster_direction) as AdjusterDirection) ?? fallback.adjusterDirection,
     targetHotPressure: {
       front: num(row.target_hot_front) ?? fallback.targetHotPressure.front,
       rear: num(row.target_hot_rear) ?? fallback.targetHotPressure.rear,
@@ -319,6 +328,8 @@ export function fromPreferences(prefs: Preferences, now: number): Row {
     pressure_unit: prefs.pressureUnit,
     temperature_unit: prefs.temperatureUnit,
     mass_unit: prefs.massUnit,
+    suspension_unit: prefs.suspensionUnit,
+    adjuster_direction: prefs.adjusterDirection,
     target_hot_front: prefs.targetHotPressure.front,
     target_hot_rear: prefs.targetHotPressure.rear,
     updated_at: now,
