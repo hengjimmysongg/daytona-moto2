@@ -107,7 +107,6 @@ function NewTrackDayForm({
   onCancel: () => void
 }) {
   const [circuit, setCircuit] = useState('')
-  const [layout, setLayout] = useState('')
   const [date, setDate] = useState(todayIso())
   const [bikeId, setBikeId] = useState(data.bikes[0]?.id ?? '')
 
@@ -125,13 +124,6 @@ function NewTrackDayForm({
           <option key={entry.name} value={entry.name} />
         ))}
       </datalist>
-      <TextField
-        label="Layout"
-        hint="Optional — which configuration you are running."
-        value={layout}
-        onChange={setLayout}
-        placeholder="Motorcycle course"
-      />
       <Field label="Date">
         {(control) => (
           <input
@@ -161,7 +153,6 @@ function NewTrackDayForm({
               bikeId,
               date,
               circuit: circuit.trim(),
-              ...(layout.trim() ? { layout: layout.trim() } : {}),
               createdAt: Date.now(),
             })
           }

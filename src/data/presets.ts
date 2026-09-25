@@ -132,31 +132,10 @@ export const BIKE_TEMPLATES: BikeTemplate[] = [
 
 export interface CircuitPreset {
   name: string
-  layout?: string
-  country: string
 }
 
 /** Suggestions for the circuit box. Anything can be typed instead. */
-export const CIRCUITS: CircuitPreset[] = [
-  { name: 'Daytona International Speedway', layout: 'Motorcycle course', country: 'US' },
-  { name: 'Barber Motorsports Park', country: 'US' },
-  { name: 'Road Atlanta', country: 'US' },
-  { name: 'Circuit of the Americas', country: 'US' },
-  { name: 'Laguna Seca', country: 'US' },
-  { name: 'Road America', country: 'US' },
-  { name: 'New Jersey Motorsports Park', layout: 'Thunderbolt', country: 'US' },
-  { name: 'Virginia International Raceway', layout: 'Full course', country: 'US' },
-  { name: 'Willow Springs', country: 'US' },
-  { name: 'Sonoma Raceway', country: 'US' },
-  { name: 'Donington Park', layout: 'National', country: 'GB' },
-  { name: 'Silverstone', layout: 'GP', country: 'GB' },
-  { name: 'Brands Hatch', layout: 'Indy', country: 'GB' },
-  { name: 'Cadwell Park', country: 'GB' },
-  { name: 'Mugello', country: 'IT' },
-  { name: 'Jerez', country: 'ES' },
-  { name: 'Portimão', country: 'PT' },
-  { name: 'Assen', country: 'NL' },
-]
+export const CIRCUITS: CircuitPreset[] = [{ name: 'YCC' }, { name: 'Speedster' }]
 
 /* ------------------------------------------------------------------ */
 /* Tyres                                                               */

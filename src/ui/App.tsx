@@ -6,6 +6,7 @@ import { SessionView } from './views/SessionView'
 import { TrackDayDetailView, TrackDayListView } from './views/TrackDayView'
 import { TyreView } from './views/TyreView'
 import { SignInView } from './views/SignInView'
+import { ResetPasswordView } from './views/ResetPasswordView'
 import { useGarage, type Garage } from './store'
 import { useAuth } from './auth'
 
@@ -37,6 +38,21 @@ export function App() {
         <header className="masthead">
           <h1 className="masthead__title">Track day log</h1>
         </header>
+      </div>
+    )
+  }
+
+  // Back from a reset email: take a new password before anything else, even
+  // though the recovery session would otherwise count as signed in.
+  if (auth.recovering) {
+    return (
+      <div className="app">
+        <header className="masthead">
+          <h1 className="masthead__title">Track day log</h1>
+        </header>
+        <main>
+          <ResetPasswordView auth={auth} />
+        </main>
       </div>
     )
   }

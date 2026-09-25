@@ -21,12 +21,22 @@ export interface Auth {
   /** True until the stored session has been checked, so the UI can wait. */
   loading: boolean
   working: boolean
+  /**
+   * True while the rider is here from a password-reset email and owes us a new
+   * password. It rides on a real (recovery) session, so it has to be checked
+   * before `account` or the app would just open behind the form.
+   */
+  recovering: boolean
   error?: string
   /** A word from the server worth showing, such as "confirm your email". */
   notice?: string
   signUp: (email: string, password: string) => Promise<void>
   signIn: (email: string, password: string) => Promise<void>
   signOut: () => Promise<void>
+  /** Email a link that brings the rider back in `recovering`. */
+  resetPassword: (email: string) => Promise<void>
+  /** Set a new password for the recovery session, which ends `recovering`. */
+  updatePassword: (password: string) => Promise<void>
 }
 
 function toAccount(session: AuthSession | null): Account | null {
@@ -38,6 +48,7 @@ export function useAuth(): Auth {
   const [account, setAccount] = useState<Account | null>(null)
   const [loading, setLoading] = useState(true)
   const [working, setWorking] = useState(false)
+  const [recovering, setRecovering] = useState(false)
   const [error, setError] = useState<string | undefined>(undefined)
   const [notice, setNotice] = useState<string | undefined>(undefined)
 
@@ -50,9 +61,12 @@ export function useAuth(): Auth {
     })
     // Covers a token refresh and a sign-out in another tab, not just our own
     // calls, so the two stay in step.
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
       setAccount(toAccount(session))
       setLoading(false)
+      // A reset link signs the rider in on a recovery session; hold them at the
+      // new-password form instead of opening the app behind it.
+      if (event === 'PASSWORD_RECOVERY') setRecovering(true)
     })
     return () => {
       live = false
@@ -104,13 +118,45 @@ export function useAuth(): Auth {
     [attempt],
   )
 
+  const resetPassword = useCallback(
+    (email: string) =>
+      attempt(async () => {
+        // The link lands back on whatever origin sent it — localhost in dev,
+        // the deployed site in production — so no URL is hard-coded here. The
+        // origin still has to be allow-listed in Supabase Auth's URL settings.
+        const { error: failed } = await supabase.auth.resetPasswordForEmail(email, {
+          redirectTo: window.location.origin,
+        })
+        if (failed) throw failed
+        // Say the same thing whether or not the address has an account, so this
+        // can't be used to find out who has signed up.
+        return 'If that email has an account, a link to set a new password is on its way.'
+      }),
+    [attempt],
+  )
+
+  const updatePassword = useCallback(
+    (password: string) =>
+      attempt(async () => {
+        const { error: failed } = await supabase.auth.updateUser({ password })
+        if (failed) throw failed
+        // The recovery session is now an ordinary one — let the app open.
+        setRecovering(false)
+        return undefined
+      }),
+    [attempt],
+  )
+
   return {
     account,
     loading,
     working,
+    recovering,
     signUp,
     signIn,
     signOut,
+    resetPassword,
+    updatePassword,
     ...(error ? { error } : {}),
     ...(notice ? { notice } : {}),
   }
