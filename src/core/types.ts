@@ -73,6 +73,31 @@ export interface SagTargets {
   rearFree: [number, number]
 }
 
+/**
+ * The adjusters a rider records a unit and direction for, keyed exactly as
+ * the setup fields in `setup.ts` are. Damping and preload, front and rear —
+ * the ones whose "style of input" differs from bike to bike. Height, oil
+ * height, ride height and sag are millimetres everywhere and are not here.
+ */
+export type AdjusterKey =
+  | 'fork.compression'
+  | 'fork.rebound'
+  | 'fork.preload'
+  | 'shock.compressionLow'
+  | 'shock.compressionHigh'
+  | 'shock.rebound'
+  | 'shock.preload'
+
+/**
+ * How one adjuster on one bike is counted. Recording choice only; the stored
+ * number is whatever the rider dialled, in the unit they count in. `direction`
+ * is meaningful for the damping adjusters and ignored for preload.
+ */
+export interface AdjusterUnitPref {
+  unit: SuspensionUnit
+  direction: AdjusterDirection
+}
+
 export interface Bike {
   id: string
   name: string
@@ -84,6 +109,19 @@ export interface Bike {
   fork: ForkSpec
   shock: ShockSpec
   sagTargets: SagTargets
+  /**
+   * Per-adjuster recording unit and direction. Absent adjusters fall back to
+   * a sensible default (clicks for damping, turns for preload; counted out
+   * from fully closed). This is what makes "clicks on the fork, turns on the
+   * shock preload" possible on the same bike.
+   */
+  adjusterUnits?: Partial<Record<AdjusterKey, AdjusterUnitPref>>
+  /**
+   * What the bike is set to right now. A rider can set it by hand, and it is
+   * kept in step with the most recent session's setup as the log is filled in.
+   * A new session starts from here.
+   */
+  currentSetup?: SuspensionSetup
   notes?: string
   createdAt: Timestamp
 }
@@ -181,6 +219,11 @@ export interface Tyre {
 
 /** Pressures and temperatures for one axle in one session. */
 export interface TyreRun {
+  /**
+   * Which carcass this was. Retained for logs written before tyres moved to
+   * the track day; the fitted tyre is now read from `TrackDay.frontTyreId` /
+   * `rearTyreId`, and new sessions leave these unset.
+   */
   tyreId?: string
   model?: TyreModel
   /** Gauge pressure set in the pits before going out, bar. */
@@ -262,6 +305,13 @@ export interface TrackDay {
   /** Layout, e.g. "Motorcycle course (3.51 mi)". */
   layout?: string
   organiser?: string
+  /**
+   * The carcasses fitted for the day. A tyre is changed in the garage between
+   * days, not between sessions, so it lives here; the pressures and
+   * temperatures it is run at stay on each session's `TyreRun`.
+   */
+  frontTyreId?: string
+  rearTyreId?: string
   notes?: string
   createdAt: Timestamp
 }
@@ -279,19 +329,12 @@ export interface Preferences {
    * nothing and invite a unit mix-up in the one place it would hurt most.
    */
   massUnit: MassUnit
-  /**
-   * How the rider counts a damping adjuster: clicks, turns or half turns.
-   * A recording choice only; it never changes a stored number.
-   */
-  suspensionUnit: SuspensionUnit
-  /** Which way damping numbers run when recording — see `AdjusterDirection`. */
-  adjusterDirection: AdjusterDirection
   /** Hot pressure the rider is aiming for, bar, per axle. */
   targetHotPressure: { front: number; rear: number }
 }
 
 /** Bumped whenever the persisted shape changes; see `storage.ts`. */
-export const SCHEMA_VERSION = 1
+export const SCHEMA_VERSION = 2
 
 export interface GarageData {
   version: number

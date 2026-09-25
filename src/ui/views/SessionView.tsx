@@ -22,20 +22,19 @@ import {
 } from '../format'
 import { formatLapDelta, formatLapTime, parseLapTime } from '../../core/laptime'
 import { buildAdvice, FEEDBACK_CATALOGUE, PHASES } from '../../core/advice'
-import {
-  adjusterConvention,
-  adjusterStep,
-  adjusterUnit,
-  diffSetups,
-  fieldsInGroup,
-  validateSetup,
-} from '../../core/setup'
-import { suspensionUnitLabel } from '../../core/units'
+import { diffSetups, validateSetup } from '../../core/setup'
 import { pressureRise, recommendFromHistory, allWearOptions, wearGuidance } from '../../core/tyres'
-import { previousSession, sessionsForDay } from '../../core/storage'
+import {
+  latestSessionForBike,
+  previousSession,
+  reconcileCurrentSetup,
+  sessionsForDay,
+  setBikeCurrentSetup,
+} from '../../core/storage'
 import { csvFilename, sessionCsv } from '../../core/csv'
 import { downloadCsv } from '../download'
 import { describeTyre } from '../../data/presets'
+import { SetupSteppers } from '../components/SetupSteppers'
 import type {
   Axle,
   Bike,
@@ -89,7 +88,23 @@ export function SessionView({
       ),
     }))
 
-  const changes = previous ? diffSetups(previous.setup, session.setup, data.preferences) : []
+  // A setup change is the bike's newest word on what it is set to, so mirror it
+  // into the bike's current setup — but only when this is the bike's latest
+  // session, so editing an older session never rewrites what is "current".
+  const onSetup = (setup: SuspensionSetup) =>
+    update((current) => {
+      const next = {
+        ...current,
+        sessions: current.sessions.map((candidate) =>
+          candidate.id === session.id ? { ...candidate, setup, updatedAt: Date.now() } : candidate,
+        ),
+      }
+      return bike && latestSessionForBike(next, bike.id)?.id === session.id
+        ? setBikeCurrentSetup(next, bike.id, setup)
+        : next
+    })
+
+  const changes = previous ? diffSetups(previous.setup, session.setup, bike) : []
   const warnings = bike ? validateSetup(bike, session.setup) : []
 
   return (
@@ -118,8 +133,7 @@ export function SessionView({
         session={session}
         previous={previous}
         bike={bike}
-        prefs={data.preferences}
-        onChange={(setup) => patch({ setup })}
+        onChange={onSetup}
       />
 
       {changes.length > 0 && (
@@ -212,10 +226,13 @@ export function SessionView({
                 type="button"
                 className="btn btn--danger"
                 onClick={() => {
-                  update((current) => ({
-                    ...current,
-                    sessions: current.sessions.filter((candidate) => candidate.id !== session.id),
-                  }))
+                  update((current) => {
+                    const next = {
+                      ...current,
+                      sessions: current.sessions.filter((candidate) => candidate.id !== session.id),
+                    }
+                    return bike ? reconcileCurrentSetup(next, bike.id) : next
+                  })
                   onBack(session.trackDayId)
                 }}
               >
@@ -414,80 +431,25 @@ function SetupCard({
   session,
   previous,
   bike,
-  prefs,
   onChange,
 }: {
   session: Session
   previous: Session | undefined
   bike: Bike | undefined
-  prefs: Preferences
   onChange: (setup: SuspensionSetup) => void
 }) {
-  const damping = suspensionUnitLabel(prefs.suspensionUnit)
-  const direction =
-    prefs.adjusterDirection === 'soft-to-hard'
-      ? 'counted in from fully open, so more is firmer'
-      : 'counted out from fully closed, so more is softer'
   return (
-    <Card title="Suspension" hint={`Damping in ${damping}, ${direction}. Preload in turns.`}>
-      <SectionLabel>Fork</SectionLabel>
-      <SetupGroupFields
-        group="fork"
+    <Card
+      title="Suspension"
+      hint="Each adjuster uses the unit and direction set for this bike in the Garage."
+    >
+      <SetupSteppers
         setup={session.setup}
-        previousSetup={previous?.setup}
         bike={bike}
-        prefs={prefs}
-        onChange={onChange}
-      />
-      <SectionLabel>Shock</SectionLabel>
-      <SetupGroupFields
-        group="shock"
-        setup={session.setup}
         previousSetup={previous?.setup}
-        bike={bike}
-        prefs={prefs}
         onChange={onChange}
       />
     </Card>
-  )
-}
-
-function SetupGroupFields({
-  group,
-  setup,
-  previousSetup,
-  bike,
-  prefs,
-  onChange,
-}: {
-  group: 'fork' | 'shock'
-  setup: SuspensionSetup
-  previousSetup: SuspensionSetup | undefined
-  bike: Bike | undefined
-  prefs: Preferences
-  onChange: (setup: SuspensionSetup) => void
-}) {
-  return (
-    <div className="grid grid--two">
-      {fieldsInGroup(group).map((field) => {
-        const spec = bike ? field.adjuster?.(bike) : undefined
-        const convention = adjusterConvention(field, prefs)
-        return (
-          <Stepper
-            key={field.key}
-            label={field.shortLabel}
-            {...(convention ? { hint: convention } : {})}
-            value={field.get(setup)}
-            baseline={previousSetup ? field.get(previousSetup) : undefined}
-            step={adjusterStep(field, prefs)}
-            min={field.key === 'shock.rideHeight' || field.key === 'fork.height' ? -50 : 0}
-            max={spec?.range}
-            unit={adjusterUnit(field, prefs)}
-            onChange={(value) => onChange(field.set(setup, value))}
-          />
-        )
-      })}
-    </div>
   )
 }
 
@@ -520,45 +482,15 @@ function TyreCard({
 
   const step = pressureStepBar(prefs)
   const wear = run.wear
-  // Retired tyres stay in the data so old sessions still make sense, but
-  // they are not offered for a new one.
-  const fitted = data.tyres.filter(
-    (tyre) => tyre.axle === axle && (!tyre.retired || tyre.id === run.tyreId),
-  )
+  const day = data.trackDays.find((candidate) => candidate.id === session.trackDayId)
+  const fitted = fittedTyre(data, day, axle)
 
   return (
     <Card title={axle === 'front' ? 'Front tyre' : 'Rear tyre'}>
-      <Field
-        label="Tyre"
-        hint={
-          fitted.length === 0
-            ? 'Add tyres in the Tyres tab to track sessions and heat cycles on each carcass.'
-            : undefined
-        }
-      >
-        {(control) => (
-          <select
-            {...control}
-            value={run.tyreId ?? ''}
-            onChange={(event) => {
-              const chosen = fitted.find((tyre) => tyre.id === event.target.value)
-              onChange({
-                ...run,
-                ...(chosen
-                  ? { tyreId: chosen.id, model: chosen.model }
-                  : { tyreId: undefined, model: undefined }),
-              })
-            }}
-          >
-            <option value="">Not recorded</option>
-            {fitted.map((tyre) => (
-              <option key={tyre.id} value={tyre.id}>
-                {tyreLabel(tyre)}
-              </option>
-            ))}
-          </select>
-        )}
-      </Field>
+      <Readout label="Fitted" value={fitted ? fittedName(fitted) : 'Not set'} />
+      <p className="muted" style={{ fontSize: 12.5, margin: '2px 0 12px' }}>
+        The carcass is fitted for the whole day — set it on the track day.
+      </p>
 
       <div className="grid grid--two">
         <Stepper
@@ -660,9 +592,14 @@ function TyreCard({
   )
 }
 
-function tyreLabel(tyre: Tyre): string {
-  const usage = tyre.sessions > 0 ? ` · ${tyre.sessions} sessions` : ''
-  return `${tyre.label ? `${tyre.label} — ` : ''}${describeTyre(tyre.model)}${usage}`
+/** The tyre fitted for a day on one axle, if one is set. */
+function fittedTyre(data: GarageData, day: GarageData['trackDays'][number] | undefined, axle: Axle): Tyre | undefined {
+  const id = axle === 'front' ? day?.frontTyreId : day?.rearTyreId
+  return id ? data.tyres.find((tyre) => tyre.id === id) : undefined
+}
+
+function fittedName(tyre: Tyre): string {
+  return `${tyre.label ? `${tyre.label} — ` : ''}${describeTyre(tyre.model)}`
 }
 
 function WearAdvice({ wear }: { wear: TyreWear }) {

@@ -72,10 +72,19 @@ function temp(celsius: number | undefined, prefs: Preferences): string {
   return celsius === undefined ? '' : num(temperatureFromC(celsius, prefs.temperatureUnit), 1)
 }
 
-function tyreName(run: TyreRun, data: GarageData): string {
-  const model = run.model ?? data.tyres.find((tyre) => tyre.id === run.tyreId)?.model
+/**
+ * The tyre fitted for the day on this axle. The carcass is a track-day choice,
+ * so it is read from the day; a session written before that move still falls
+ * back to whatever it recorded itself.
+ */
+function fittedTyreName(row: Row, axle: 'front' | 'rear', data: GarageData): string {
+  const dayTyreId = axle === 'front' ? row.day.frontTyreId : row.day.rearTyreId
+  const tyre = dayTyreId ? data.tyres.find((candidate) => candidate.id === dayTyreId) : undefined
+  const run = row.session.tyres[axle]
+  const model = tyre?.model ?? run.model ?? data.tyres.find((t) => t.id === run.tyreId)?.model
   if (!model) return ''
-  return [model.make, model.model, model.compound].filter(Boolean).join(' ')
+  const name = [model.make, model.model, model.compound].filter(Boolean).join(' ')
+  return tyre?.label ? `${tyre.label} — ${name}` : name
 }
 
 /**
@@ -89,7 +98,7 @@ function tyreColumns(axle: 'front' | 'rear', data: GarageData): Column[] {
   const side = axle === 'front' ? 'Front' : 'Rear'
   const run = (row: Row): TyreRun => row.session.tyres[axle]
   return [
-    { header: () => `${side} tyre`, value: (row) => tyreName(run(row), data) },
+    { header: () => `${side} tyre`, value: (row) => fittedTyreName(row, axle, data) },
     {
       header: (prefs) => `${side} cold (${prefs.pressureUnit})`,
       value: (row) => pressure(run(row).coldPressure, row.prefs),

@@ -37,7 +37,7 @@ export function TyreView({ garage }: { garage: Garage }) {
         ) : (
           <ul className="list">
             {data.tyres.map((tyre) => {
-              const usage = tyreUsage(data.sessions, tyre.id)
+              const usage = tyreUsage(data, tyre.id)
               // What the rider recorded by hand, plus what this log has seen.
               // A tyre usually arrives with cycles already on it, and the
               // sessions here only ever add to that.
@@ -57,6 +57,36 @@ export function TyreView({ garage }: { garage: Garage }) {
                   <div className="list__meta">
                     {tyre.axle === 'front' ? 'Front' : 'Rear'} · {heatCycles} heat{' '}
                     {heatCycles === 1 ? 'cycle' : 'cycles'}
+                  </div>
+
+                  <div style={{ marginTop: 10 }}>
+                    <TextField
+                      label="Name"
+                      hint="Rename any time — a label to tell two of the same tyre apart."
+                      value={tyre.label ?? ''}
+                      onChange={(label) => edit(tyre.id, { label: label || undefined })}
+                      placeholder="Set B"
+                    />
+                  </div>
+                  <div className="grid grid--two">
+                    <TextField
+                      label="Make"
+                      value={tyre.model.make}
+                      onChange={(make) => edit(tyre.id, { model: { ...tyre.model, make } })}
+                    />
+                    <TextField
+                      label="Model"
+                      value={tyre.model.model}
+                      onChange={(model) => edit(tyre.id, { model: { ...tyre.model, model } })}
+                    />
+                    <TextField
+                      label="Compound"
+                      value={tyre.model.compound ?? ''}
+                      onChange={(compound) =>
+                        edit(tyre.id, { model: { ...tyre.model, compound: compound || undefined } })
+                      }
+                      placeholder="SC1"
+                    />
                   </div>
 
                   <div className="grid grid--two" style={{ marginTop: 10 }}>
@@ -107,6 +137,12 @@ export function TyreView({ garage }: { garage: Garage }) {
                         update((current) => ({
                           ...current,
                           tyres: current.tyres.filter((candidate) => candidate.id !== tyre.id),
+                          // Any day this tyre was fitted to loses the reference.
+                          trackDays: current.trackDays.map((day) => ({
+                            ...day,
+                            ...(day.frontTyreId === tyre.id ? { frontTyreId: undefined } : {}),
+                            ...(day.rearTyreId === tyre.id ? { rearTyreId: undefined } : {}),
+                          })),
                         }))
                       }
                     >

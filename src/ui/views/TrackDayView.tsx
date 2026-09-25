@@ -3,13 +3,18 @@ import { Badge, Card, EmptyState, Field, Note, SelectField, TextField } from '..
 import { fmtDate, fmtPressure, fmtPressureDelta, fmtTemp, todayIso } from '../format'
 import { formatLapTime } from '../../core/laptime'
 import { newId } from '../../core/id'
-import { diffSetups, summariseDiff } from '../../core/setup'
+import { cloneSetup, diffSetups, summariseDiff } from '../../core/setup'
 import { pressureRise } from '../../core/tyres'
-import { sessionsForDay, trackDaysByDate } from '../../core/storage'
+import {
+  reconcileCurrentSetup,
+  sessionsForDay,
+  setBikeCurrentSetup,
+  trackDaysByDate,
+} from '../../core/storage'
 import { csvFilename, trackDayCsv } from '../../core/csv'
 import { downloadCsv } from '../download'
-import { CIRCUITS } from '../../data/presets'
-import type { GarageData, Session, TrackDay } from '../../core/types'
+import { CIRCUITS, describeTyre } from '../../data/presets'
+import type { Axle, Bike, GarageData, Session, TrackDay } from '../../core/types'
 import type { Garage } from '../store'
 
 export function TrackDayListView({
@@ -207,13 +212,15 @@ export function TrackDayDetailView({
       trackDayId: day.id,
       number: (previous?.number ?? 0) + 1,
       startedAt: now,
-      // Carry the setup and conditions forward. A session almost always
-      // starts from where the last one finished, and re-typing a whole setup
-      // between sessions is how log books stop getting filled in.
+      // Carry conditions and setup forward. A session almost always starts
+      // from where the last one finished; the first of a day starts from what
+      // the bike is currently set to, so a setup is never re-typed from blank.
       conditions: previous ? { ...previous.conditions } : {},
       setup: previous
         ? { fork: { ...previous.setup.fork }, shock: { ...previous.setup.shock } }
-        : { fork: {}, shock: {} },
+        : bike?.currentSetup
+          ? cloneSetup(bike.currentSetup)
+          : { fork: {}, shock: {} },
       tyres: {
         front: carryTyre(previous?.tyres.front),
         rear: carryTyre(previous?.tyres.rear),
@@ -222,7 +229,11 @@ export function TrackDayDetailView({
       createdAt: now,
       updatedAt: now,
     }
-    update((current) => ({ ...current, sessions: [...current.sessions, session] }))
+    update((current) => {
+      const next = { ...current, sessions: [...current.sessions, session] }
+      // The new session is now the bike's latest, so it defines "current".
+      return bike ? setBikeCurrentSetup(next, bike.id, session.setup) : next
+    })
     onOpenSession(session.id)
   }
 
@@ -260,6 +271,7 @@ export function TrackDayDetailView({
                 <SessionRow
                   session={session}
                   previous={index > 0 ? sessions[index - 1] : undefined}
+                  bike={bike}
                   data={data}
                   onClick={() => onOpenSession(session.id)}
                 />
@@ -268,6 +280,8 @@ export function TrackDayDetailView({
           </ul>
         )}
       </Card>
+
+      <DayTyresCard day={day} data={data} update={update} />
 
       <Card title="Track day notes">
         <Field label="Notes">
@@ -309,11 +323,14 @@ export function TrackDayDetailView({
                 type="button"
                 className="btn btn--danger"
                 onClick={() => {
-                  update((current) => ({
-                    ...current,
-                    trackDays: current.trackDays.filter((candidate) => candidate.id !== day.id),
-                    sessions: current.sessions.filter((session) => session.trackDayId !== day.id),
-                  }))
+                  update((current) => {
+                    const next = {
+                      ...current,
+                      trackDays: current.trackDays.filter((candidate) => candidate.id !== day.id),
+                      sessions: current.sessions.filter((session) => session.trackDayId !== day.id),
+                    }
+                    return day.bikeId ? reconcileCurrentSetup(next, day.bikeId) : next
+                  })
                   onBack()
                 }}
               >
@@ -338,19 +355,97 @@ export function TrackDayDetailView({
   )
 }
 
+function DayTyresCard({
+  day,
+  data,
+  update,
+}: {
+  day: TrackDay
+  data: GarageData
+  update: Garage['update']
+}) {
+  const setTyre = (axle: Axle, tyreId: string) =>
+    update((current) => ({
+      ...current,
+      trackDays: current.trackDays.map((candidate) =>
+        candidate.id === day.id
+          ? {
+              ...candidate,
+              ...(axle === 'front'
+                ? { frontTyreId: tyreId || undefined }
+                : { rearTyreId: tyreId || undefined }),
+            }
+          : candidate,
+      ),
+    }))
+
+  return (
+    <Card
+      title="Tyres"
+      hint="Fitted for the whole day. Cold and hot pressures are still recorded on each session."
+    >
+      {data.tyres.length === 0 ? (
+        <Note>
+          Add tyres in the Tyres tab, then choose the front and rear fitted for the day here.
+        </Note>
+      ) : (
+        <div className="grid grid--two">
+          <DayTyreField axle="front" day={day} data={data} onChange={(id) => setTyre('front', id)} />
+          <DayTyreField axle="rear" day={day} data={data} onChange={(id) => setTyre('rear', id)} />
+        </div>
+      )}
+    </Card>
+  )
+}
+
+function DayTyreField({
+  axle,
+  day,
+  data,
+  onChange,
+}: {
+  axle: Axle
+  day: TrackDay
+  data: GarageData
+  onChange: (tyreId: string) => void
+}) {
+  const selectedId = axle === 'front' ? day.frontTyreId : day.rearTyreId
+  // Retired tyres stay selectable only if they are the one already fitted, so
+  // an old day still reads right without offering a dead carcass for a new one.
+  const options = data.tyres.filter(
+    (tyre) => tyre.axle === axle && (!tyre.retired || tyre.id === selectedId),
+  )
+  return (
+    <SelectField
+      label={axle === 'front' ? 'Front' : 'Rear'}
+      value={selectedId ?? ''}
+      options={[
+        { value: '', label: 'Not set' },
+        ...options.map((tyre) => ({
+          value: tyre.id,
+          label: `${tyre.label ? `${tyre.label} — ` : ''}${describeTyre(tyre.model)}`,
+        })),
+      ]}
+      onChange={onChange}
+    />
+  )
+}
+
 function SessionRow({
   session,
   previous,
+  bike,
   data,
   onClick,
 }: {
   session: Session
   previous: Session | undefined
+  bike: Bike | undefined
   data: GarageData
   onClick: () => void
 }) {
   const prefs = data.preferences
-  const changes = previous ? diffSetups(previous.setup, session.setup, prefs) : []
+  const changes = previous ? diffSetups(previous.setup, session.setup, bike) : []
   const frontRise = pressureRise(session.tyres.front)
   const rearRise = pressureRise(session.tyres.rear)
 
@@ -386,12 +481,14 @@ function SessionRow({
   )
 }
 
-/** Carry a tyre forward: same rubber and cold pressure, hot reading cleared. */
+/**
+ * Carry a tyre run forward: same cold pressure and warmer set point, hot
+ * reading cleared. The fitted carcass is a track-day choice now, so it is not
+ * carried here — it comes from the day.
+ */
 function carryTyre(previous: Session['tyres']['front'] | undefined): Session['tyres']['front'] {
   if (!previous) return {}
   const next: Session['tyres']['front'] = {}
-  if (previous.tyreId !== undefined) next.tyreId = previous.tyreId
-  if (previous.model !== undefined) next.model = previous.model
   if (previous.coldPressure !== undefined) next.coldPressure = previous.coldPressure
   if (previous.warmerTemp !== undefined) next.warmerTemp = previous.warmerTemp
   return next

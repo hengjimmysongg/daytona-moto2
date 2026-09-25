@@ -13,10 +13,22 @@ import {
   summariseDiff,
   validateSetup,
 } from '../src/core/setup'
-import { BIKE_TEMPLATES } from '../src/data/presets'
-import type { SuspensionSetup } from '../src/core/types'
+import { newBike } from '../src/data/presets'
+import type { AdjusterUnitPref, Bike, SuspensionSetup } from '../src/core/types'
 
-const bike = (BIKE_TEMPLATES.find((t) => t.key === 'sportbike') as (typeof BIKE_TEMPLATES)[number]).build(0)
+/** A bike with real adjuster ranges, for the validation tests. */
+function testBike(): Bike {
+  const b = newBike('Test', 0)
+  b.fork.compression.range = 18
+  b.fork.rebound.range = 18
+  b.fork.preload.range = 8
+  b.shock.compressionLow.range = 18
+  b.shock.rebound.range = 18
+  b.shock.preload.range = 10
+  return b
+}
+
+const bike = testBike()
 
 const base: SuspensionSetup = {
   fork: { compression: 12, rebound: 10, preload: 4, height: 5 },
@@ -159,54 +171,71 @@ describe('emptySetup', () => {
   })
 })
 
-describe('adjuster unit and direction', () => {
-  const hardClicks = { suspensionUnit: 'clicks', adjusterDirection: 'hard-to-soft' } as const
-  const softClicks = { suspensionUnit: 'clicks', adjusterDirection: 'soft-to-hard' } as const
-
-  it('shows a click adjuster in the rider’s chosen unit', () => {
-    const after = { ...base, fork: { ...base.fork, compression: 10 } }
-    expect(diffSetups(base, after, { suspensionUnit: 'turns', adjusterDirection: 'hard-to-soft' })[0]!.summary).toBe(
-      'Fork compression 12 → 10 turns',
-    )
-    expect(
-      diffSetups(base, after, { suspensionUnit: 'half-turns', adjusterDirection: 'hard-to-soft' })[0]!.summary,
-    ).toBe('Fork compression 12 → 10 half turns')
+describe('adjuster unit and direction (per bike, per adjuster)', () => {
+  /** A bike whose fork compression is recorded a particular way. */
+  const withCompression = (pref: AdjusterUnitPref): Bike => ({
+    ...newBike('Test', 0),
+    adjusterUnits: { 'fork.compression': pref },
   })
 
-  it('leaves preload in turns whatever unit the clickers are counted in', () => {
+  it('shows an adjuster in the unit chosen for it on this bike', () => {
+    const after = { ...base, fork: { ...base.fork, compression: 10 } }
+    const turns = withCompression({ unit: 'turns', direction: 'hard-to-soft' })
+    expect(diffSetups(base, after, turns)[0]!.summary).toBe('Fork compression 12 → 10 turns')
+    const halfTurns = withCompression({ unit: 'half-turns', direction: 'hard-to-soft' })
+    expect(diffSetups(base, after, halfTurns)[0]!.summary).toBe('Fork compression 12 → 10 half turns')
+  })
+
+  it('records each adjuster in its own unit — preload need not match the clickers', () => {
     const after = { ...base, fork: { ...base.fork, preload: 5 } }
-    expect(diffSetups(base, after, { suspensionUnit: 'half-turns', adjusterDirection: 'hard-to-soft' })[0]!.summary).toBe(
-      'Fork preload 4 → 5 turns',
-    )
+    // Compression in half turns leaves preload on its own default of turns.
+    const halfClickers = withCompression({ unit: 'half-turns', direction: 'hard-to-soft' })
+    expect(diffSetups(base, after, halfClickers)[0]!.summary).toBe('Fork preload 4 → 5 turns')
+    // And preload itself can be recorded in clicks on a bike that counts it that way.
+    const preloadClicks: Bike = {
+      ...newBike('Test', 0),
+      adjusterUnits: { 'fork.preload': { unit: 'clicks', direction: 'hard-to-soft' } },
+    }
+    expect(diffSetups(base, after, preloadClicks)[0]!.summary).toBe('Fork preload 4 → 5 clicks')
   })
 
   it('reverses firmer/softer when the adjuster is recorded from fully open', () => {
     const after = { ...base, fork: { ...base.fork, compression: 10 } }
+    const hard = withCompression({ unit: 'clicks', direction: 'hard-to-soft' })
+    const soft = withCompression({ unit: 'clicks', direction: 'soft-to-hard' })
     // Counted out from closed, dropping two clicks is more damping — firmer.
-    expect(diffSetups(base, after, hardClicks)[0]!.effect).toMatch(/firmer front/)
+    expect(diffSetups(base, after, hard)[0]!.effect).toMatch(/firmer front/)
     // Counted in from open, the same smaller number is less damping — softer.
-    expect(diffSetups(base, after, softClicks)[0]!.effect).toMatch(/softer front/)
+    expect(diffSetups(base, after, soft)[0]!.effect).toMatch(/softer front/)
   })
 
   it('does not reverse a non-damping field like ride height', () => {
     const after = { ...base, shock: { ...base.shock, rideHeight: 2 } }
-    expect(diffSetups(base, after, hardClicks)[0]!.effect).toBe(
-      diffSetups(base, after, softClicks)[0]!.effect,
-    )
+    const hard = withCompression({ unit: 'clicks', direction: 'hard-to-soft' })
+    const soft = withCompression({ unit: 'clicks', direction: 'soft-to-hard' })
+    expect(diffSetups(base, after, hard)[0]!.effect).toBe(diffSetups(base, after, soft)[0]!.effect)
   })
 
   it('writes the convention for the chosen unit and direction', () => {
     const field = SETUP_FIELDS_BY_KEY.get('fork.compression')!
-    expect(adjusterConvention(field, { suspensionUnit: 'turns', adjusterDirection: 'hard-to-soft' })).toBe(
-      'turns out from fully closed — more is softer',
-    )
-    expect(adjusterConvention(field, softClicks)).toBe('clicks in from fully open — more is firmer')
+    const turns = withCompression({ unit: 'turns', direction: 'hard-to-soft' })
+    expect(adjusterConvention(field, turns)).toBe('turns out from fully closed — more is softer')
+    const soft = withCompression({ unit: 'clicks', direction: 'soft-to-hard' })
+    expect(adjusterConvention(field, soft)).toBe('clicks in from fully open — more is firmer')
   })
 
   it('steps clicks whole, turns by a quarter, half turns by a half', () => {
     const field = SETUP_FIELDS_BY_KEY.get('fork.compression')!
-    expect(adjusterStep(field, hardClicks)).toBe(1)
-    expect(adjusterStep(field, { suspensionUnit: 'turns', adjusterDirection: 'hard-to-soft' })).toBe(0.25)
-    expect(adjusterStep(field, { suspensionUnit: 'half-turns', adjusterDirection: 'hard-to-soft' })).toBe(0.5)
+    expect(adjusterStep(field, withCompression({ unit: 'clicks', direction: 'hard-to-soft' }))).toBe(1)
+    expect(adjusterStep(field, withCompression({ unit: 'turns', direction: 'hard-to-soft' }))).toBe(0.25)
+    expect(adjusterStep(field, withCompression({ unit: 'half-turns', direction: 'hard-to-soft' }))).toBe(0.5)
+  })
+
+  it('defaults to clicks out from fully closed when the bike has chosen nothing', () => {
+    const field = SETUP_FIELDS_BY_KEY.get('fork.compression')!
+    expect(adjusterConvention(field, newBike('Test', 0))).toBe(
+      'clicks out from fully closed — more is softer',
+    )
+    expect(adjusterConvention(field, undefined)).toBe('clicks out from fully closed — more is softer')
   })
 })

@@ -9,12 +9,15 @@ import {
   loadGarage,
   memoryStorage,
   previousSession,
+  reconcileCurrentSetup,
   saveGarage,
   sessionsForDay,
+  setBikeCurrentSetup,
   STORAGE_KEY,
   suggestExportFilename,
   trackDaysByDate,
 } from '../src/core/storage'
+import { newBike } from '../src/data/presets'
 import { SCHEMA_VERSION } from '../src/core/types'
 import type { GarageData, Session, TrackDay } from '../src/core/types'
 
@@ -157,24 +160,117 @@ describe('import and export', () => {
     expect(imported.preferences.temperatureUnit).toBe(defaultPreferences().temperatureUnit)
   })
 
-  it('defaults the suspension unit to clicks, counted hardest-first', () => {
-    expect(defaultPreferences().suspensionUnit).toBe('clicks')
-    expect(defaultPreferences().adjusterDirection).toBe('hard-to-soft')
-  })
-
-  it('keeps a suspension unit and recording direction a file set', () => {
+  it('ignores the suspension prefs an older file carried, now that they live per bike', () => {
     const imported = importGarage(
       JSON.stringify({
         version: 1,
-        preferences: { suspensionUnit: 'half-turns', adjusterDirection: 'soft-to-hard' },
+        preferences: { suspensionUnit: 'half-turns', adjusterDirection: 'soft-to-hard', pressureUnit: 'bar' },
       }),
     )
-    expect(imported.preferences.suspensionUnit).toBe('half-turns')
-    expect(imported.preferences.adjusterDirection).toBe('soft-to-hard')
+    expect(imported.preferences.pressureUnit).toBe('bar')
+    expect('suspensionUnit' in imported.preferences).toBe(false)
+    expect('adjusterDirection' in imported.preferences).toBe(false)
   })
 
   it('suggests a dated filename', () => {
     expect(suggestExportFilename(new Date('2026-03-07T12:00:00Z'))).toBe('daytona-moto2-2026-03-07.json')
+  })
+})
+
+describe('current setup helpers', () => {
+  const bike = { ...newBike('Bike', 0), id: 'bike' }
+  const withComp = (id: string, trackDayId: string, number: number, compression: number): Session => ({
+    id,
+    trackDayId,
+    number,
+    conditions: {},
+    setup: { fork: { compression }, shock: {} },
+    tyres: { front: {}, rear: {} },
+    feedback: [],
+    createdAt: 0,
+    updatedAt: 0,
+  })
+
+  it('setBikeCurrentSetup sets one bike, and is a no-op when the value already matches', () => {
+    const data: GarageData = { ...createEmptyGarage(0), bikes: [bike] }
+    const set = setBikeCurrentSetup(data, 'bike', { fork: { compression: 10 }, shock: {} })
+    expect(set.bikes[0]!.currentSetup?.fork.compression).toBe(10)
+    expect(setBikeCurrentSetup(set, 'bike', { fork: { compression: 10 }, shock: {} })).toBe(set)
+  })
+
+  it('setBikeCurrentSetup leaves other bikes untouched', () => {
+    const other = { ...newBike('Other', 0), id: 'other' }
+    const data: GarageData = { ...createEmptyGarage(0), bikes: [bike, other] }
+    const set = setBikeCurrentSetup(data, 'bike', { fork: { compression: 10 }, shock: {} })
+    expect(set.bikes[1]!.currentSetup).toBeUndefined()
+  })
+
+  it('reconcileCurrentSetup follows the most recent session (later day, higher number)', () => {
+    const data: GarageData = {
+      ...createEmptyGarage(0),
+      bikes: [bike],
+      trackDays: [day('d1', '2026-03-01'), day('d2', '2026-03-08')],
+      sessions: [withComp('a', 'd1', 1, 12), withComp('b', 'd2', 1, 8), withComp('c', 'd2', 2, 10)],
+    }
+    expect(reconcileCurrentSetup(data, 'bike').bikes[0]!.currentSetup?.fork.compression).toBe(10)
+  })
+
+  it('reconcileCurrentSetup leaves a bike with no sessions on its manual current setup', () => {
+    const manual = { ...bike, currentSetup: { fork: { compression: 5 }, shock: {} } }
+    const data: GarageData = { ...createEmptyGarage(0), bikes: [manual] }
+    expect(reconcileCurrentSetup(data, 'bike')).toBe(data)
+    expect(reconcileCurrentSetup(data, 'bike').bikes[0]!.currentSetup?.fork.compression).toBe(5)
+  })
+})
+
+describe('migrate backfills day tyres from older logs', () => {
+  it('lifts the fitted tyre from sessions onto the day for a pre-v2 file', () => {
+    const imported = importGarage(
+      JSON.stringify({
+        version: 1,
+        trackDays: [{ id: 'd', bikeId: 'b', date: '2026-03-07', circuit: 'YCC', createdAt: 0 }],
+        sessions: [
+          {
+            id: 's',
+            trackDayId: 'd',
+            number: 1,
+            conditions: {},
+            setup: { fork: {}, shock: {} },
+            tyres: { front: { tyreId: 'tyreF' }, rear: { tyreId: 'tyreR' } },
+            feedback: [],
+            createdAt: 0,
+            updatedAt: 0,
+          },
+        ],
+      }),
+    )
+    expect(imported.trackDays[0]!.frontTyreId).toBe('tyreF')
+    expect(imported.trackDays[0]!.rearTyreId).toBe('tyreR')
+  })
+
+  it('leaves a current-schema file, whose tyres are already on the day, alone', () => {
+    const imported = importGarage(
+      JSON.stringify({
+        version: SCHEMA_VERSION,
+        trackDays: [
+          { id: 'd', bikeId: 'b', date: '2026-03-07', circuit: 'YCC', createdAt: 0, frontTyreId: 'onDay' },
+        ],
+        sessions: [
+          {
+            id: 's',
+            trackDayId: 'd',
+            number: 1,
+            conditions: {},
+            setup: { fork: {}, shock: {} },
+            tyres: { front: { tyreId: 'legacy' }, rear: {} },
+            feedback: [],
+            createdAt: 0,
+            updatedAt: 0,
+          },
+        ],
+      }),
+    )
+    expect(imported.trackDays[0]!.frontTyreId).toBe('onDay')
   })
 })
 

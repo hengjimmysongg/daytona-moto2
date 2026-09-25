@@ -15,7 +15,7 @@
  */
 
 import { ATMOSPHERIC_BAR, celsiusToKelvin } from './units.js'
-import type { Session, TyreRun, TyreWear } from './types.js'
+import type { GarageData, TyreRun, TyreWear } from './types.js'
 
 /** Pressure rise across a session, bar. Undefined if either end is missing. */
 export function pressureRise(run: Pick<TyreRun, 'coldPressure' | 'hotPressure'>): number | undefined {
@@ -277,17 +277,24 @@ export function allWearOptions(): WearGuidance[] {
  * A heat cycle is counted per session the tyre was actually run in — a
  * warmer-on/warmer-off, out and back. It is a rough measure of how much the
  * rubber has hardened, not a precise one.
+ *
+ * A tyre is fitted for a whole track day, so every session on a day whose
+ * front or rear carcass is this tyre counts as a run on it.
  */
-export function tyreUsage(sessions: ReadonlyArray<Session>, tyreId: string): {
+export function tyreUsage(data: GarageData, tyreId: string): {
   sessions: number
   heatCycles: number
   lastUsed?: number
 } {
+  const daysWithTyre = new Set(
+    data.trackDays
+      .filter((day) => day.frontTyreId === tyreId || day.rearTyreId === tyreId)
+      .map((day) => day.id),
+  )
   let count = 0
   let lastUsed: number | undefined
-  for (const session of sessions) {
-    const used = session.tyres.front.tyreId === tyreId || session.tyres.rear.tyreId === tyreId
-    if (!used) continue
+  for (const session of data.sessions) {
+    if (!daysWithTyre.has(session.trackDayId)) continue
     count += 1
     const when = session.startedAt ?? session.createdAt
     if (lastUsed === undefined || when > lastUsed) lastUsed = when

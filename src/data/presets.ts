@@ -33,98 +33,33 @@ export const ROAD_SAG_TARGETS: SagTargets = {
   rearFree: [5, 15],
 }
 
-export interface BikeTemplate {
-  key: string
-  name: string
-  description: string
-  build(now?: number): Bike
-}
-
-function template(
-  key: string,
-  name: string,
-  description: string,
-  bike: Omit<Bike, 'id' | 'name' | 'createdAt'>,
-): BikeTemplate {
+/**
+ * A new bike, from a name alone.
+ *
+ * A bike is only an identity to hang track days and setups on. The adjuster
+ * ranges start unset (`range: 0` — no limit and no "impossible setting" check
+ * until the rider fills them in), and per-adjuster units default to clicks for
+ * damping and turns for preload. Everything is editable afterwards in the
+ * bike editor; adding one asks for nothing but a name.
+ */
+export function newBike(name: string, now: number = Date.now()): Bike {
   return {
-    key,
+    id: newId('bike'),
     name,
-    description,
-    build: (now = Date.now()) => ({ id: newId('bike'), name, createdAt: now, ...bike }),
+    fork: {
+      compression: { range: 0, unit: 'clicks' },
+      rebound: { range: 0, unit: 'clicks' },
+      preload: { range: 0, unit: 'turns' },
+    },
+    shock: {
+      compressionLow: { range: 0, unit: 'clicks' },
+      rebound: { range: 0, unit: 'clicks' },
+      preload: { range: 0, unit: 'turns' },
+    },
+    sagTargets: TRACK_SAG_TARGETS,
+    createdAt: now,
   }
 }
-
-export const BIKE_TEMPLATES: BikeTemplate[] = [
-  template(
-    'daytona-675r',
-    'Triumph Daytona 675R',
-    'Öhlins NIX30 fork and TTX36 shock, as fitted to the R. Check your own clicker counts.',
-    {
-      make: 'Triumph',
-      model: 'Daytona 675R',
-      fork: {
-        travel: 120,
-        compression: { range: 20, unit: 'clicks' },
-        rebound: { range: 20, unit: 'clicks' },
-        preload: { range: 12, unit: 'turns' },
-      },
-      shock: {
-        travel: 130,
-        compressionLow: { range: 20, unit: 'clicks' },
-        compressionHigh: { range: 3, unit: 'turns' },
-        rebound: { range: 20, unit: 'clicks' },
-        preload: { range: 10, unit: 'turns' },
-      },
-      sagTargets: TRACK_SAG_TARGETS,
-      notes:
-        'Damping counted in clicks out from fully closed. Preload in turns in from fully soft.',
-    },
-  ),
-  template(
-    'moto2-765',
-    'Moto2 (Triumph 765)',
-    'Prototype chassis on Öhlins, with the wider adjustment range a race kit gives you.',
-    {
-      make: 'Triumph',
-      model: '765 Moto2',
-      fork: {
-        travel: 120,
-        compression: { range: 30, unit: 'clicks' },
-        rebound: { range: 30, unit: 'clicks' },
-        preload: { range: 15, unit: 'turns' },
-      },
-      shock: {
-        travel: 130,
-        compressionLow: { range: 30, unit: 'clicks' },
-        compressionHigh: { range: 4, unit: 'turns' },
-        rebound: { range: 30, unit: 'clicks' },
-        preload: { range: 12, unit: 'turns' },
-      },
-      sagTargets: TRACK_SAG_TARGETS,
-      notes: 'Ride height recorded as shock/linkage rod length.',
-    },
-  ),
-  template(
-    'sportbike',
-    'Sportbike (track)',
-    'A neutral starting template for any 600 or 1000 on stock adjustable suspension.',
-    {
-      fork: {
-        travel: 120,
-        compression: { range: 18, unit: 'clicks' },
-        rebound: { range: 18, unit: 'clicks' },
-        preload: { range: 8, unit: 'turns' },
-      },
-      shock: {
-        travel: 130,
-        compressionLow: { range: 18, unit: 'clicks' },
-        rebound: { range: 18, unit: 'clicks' },
-        preload: { range: 10, unit: 'turns' },
-      },
-      sagTargets: TRACK_SAG_TARGETS,
-    },
-  ),
-]
 
 /* ------------------------------------------------------------------ */
 /* Circuits                                                            */

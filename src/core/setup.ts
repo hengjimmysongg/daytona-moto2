@@ -20,8 +20,9 @@
  * the stroke.
  */
 
-import type { AdjusterSpec, Bike, Preferences, SuspensionSetup } from './types.js'
+import type { AdjusterKey, AdjusterSpec, AdjusterUnitPref, Bike, SuspensionSetup } from './types.js'
 import { EMPTY_SETUP } from './types.js'
+import type { SuspensionUnit } from './units.js'
 import { suspensionUnitLabel, suspensionUnitStep } from './units.js'
 
 export type SetupGroup = 'fork' | 'shock' | 'sag' | 'geometry'
@@ -228,38 +229,50 @@ export function fieldsInGroup(group: SetupGroup): SetupField[] {
 /* Adjuster units and direction                                        */
 /* ------------------------------------------------------------------ */
 
-/** The two preferences that change how an adjuster is recorded and read. */
-export type AdjusterDisplay = Pick<Preferences, 'suspensionUnit' | 'adjusterDirection'>
+/**
+ * The adjusters a bike records a unit and direction for — exactly the fields
+ * that are not millimetres. Height, oil height, ride height and sag are mm on
+ * every bike and are never in this set.
+ */
+export function isAdjustable(field: SetupField): boolean {
+  return field.unit !== 'mm'
+}
 
-/** The app's original convention: clicks, counted out from fully closed. */
-const DEFAULT_DISPLAY: AdjusterDisplay = {
-  suspensionUnit: 'clicks',
-  adjusterDirection: 'hard-to-soft',
+/** The default recording unit for a field before a bike chooses one. */
+function defaultUnit(field: SetupField): SuspensionUnit {
+  return field.unit === 'turns' ? 'turns' : 'clicks'
 }
 
 /**
- * The unit word to show for a field. Only the click adjusters follow the
- * rider's choice of clicks / turns / half turns; preload stays in turns and
- * geometry stays in millimetres, because those are not what that choice is
- * asking about.
+ * How a field is recorded on a given bike: the rider's chosen unit and
+ * direction for that one adjuster, or a sensible default (clicks for damping,
+ * turns for preload; counted out from fully closed). This is what lets one
+ * bike record clicks on the fork and turns on the shock preload.
  */
-export function adjusterUnit(field: SetupField, display: AdjusterDisplay = DEFAULT_DISPLAY): string {
-  return field.unit === 'clicks' ? suspensionUnitLabel(display.suspensionUnit) : field.unit
+export function displayForField(field: SetupField, bike?: Bike): AdjusterUnitPref {
+  const chosen = bike?.adjusterUnits?.[field.key as AdjusterKey]
+  return {
+    unit: chosen?.unit ?? defaultUnit(field),
+    direction: chosen?.direction ?? 'hard-to-soft',
+  }
 }
 
-/** One nudge of a field's control, in the rider's chosen unit. */
-export function adjusterStep(field: SetupField, display: AdjusterDisplay = DEFAULT_DISPLAY): number {
-  return field.unit === 'clicks' ? suspensionUnitStep(display.suspensionUnit) : field.step
+/** The unit word to show for a field: mm stays mm, everything else per bike. */
+export function adjusterUnit(field: SetupField, bike?: Bike): string {
+  return field.unit === 'mm' ? 'mm' : suspensionUnitLabel(displayForField(field, bike).unit)
 }
 
-/** The convention line for a field, honouring the chosen recording direction. */
-export function adjusterConvention(
-  field: SetupField,
-  display: AdjusterDisplay = DEFAULT_DISPLAY,
-): string | undefined {
-  if (!field.hardnessAxis) return field.convention
-  const unit = adjusterUnit(field, display)
-  return display.adjusterDirection === 'soft-to-hard'
+/** One nudge of a field's control, in the unit that field is recorded in. */
+export function adjusterStep(field: SetupField, bike?: Bike): number {
+  return field.unit === 'mm' ? field.step : suspensionUnitStep(displayForField(field, bike).unit)
+}
+
+/** The convention line for a field, in its unit and (for damping) direction. */
+export function adjusterConvention(field: SetupField, bike?: Bike): string | undefined {
+  if (field.unit === 'mm') return field.convention
+  const unit = adjusterUnit(field, bike)
+  if (!field.hardnessAxis) return `${unit} in from fully soft`
+  return displayForField(field, bike).direction === 'soft-to-hard'
     ? `${unit} in from fully open — more is firmer`
     : `${unit} out from fully closed — more is softer`
 }
@@ -291,7 +304,7 @@ function formatAmount(value: number, unit: string): string {
 export function diffSetups(
   before: SuspensionSetup,
   after: SuspensionSetup,
-  display: AdjusterDisplay = DEFAULT_DISPLAY,
+  bike?: Bike,
 ): SetupChange[] {
   const changes: SetupChange[] = []
   for (const field of SETUP_FIELDS) {
@@ -300,7 +313,7 @@ export function diffSetups(
     if (from === to) continue
     if (from === undefined && to === undefined) continue
 
-    const unit = adjusterUnit(field, display)
+    const unit = adjusterUnit(field, bike)
     const delta = from !== undefined && to !== undefined ? to - from : undefined
     let summary: string
     if (from === undefined) {
@@ -315,7 +328,8 @@ export function diffSetups(
     if (delta !== undefined && delta !== 0) {
       // On a damping adjuster recorded from fully open, a bigger number is
       // firmer, so the effect of an increase and a decrease swap over.
-      const swap = (field.hardnessAxis ?? false) && display.adjusterDirection === 'soft-to-hard'
+      const swap =
+        (field.hardnessAxis ?? false) && displayForField(field, bike).direction === 'soft-to-hard'
       const onIncrease = swap ? field.decreaseEffect : field.increaseEffect
       const onDecrease = swap ? field.increaseEffect : field.decreaseEffect
       const effect = delta > 0 ? onIncrease : onDecrease
@@ -366,7 +380,9 @@ export function validateSetup(bike: Bike, setup: SuspensionSetup): SetupWarning[
     const value = field.get(setup)
     if (value === undefined) continue
     const spec = field.adjuster?.(bike)
-    if (!spec) continue
+    // A range of 0 means the rider has not told us what this adjuster can do,
+    // so there is nothing to check it against yet.
+    if (!spec || !spec.range) continue
     if (value < 0) {
       warnings.push({ key: field.key, message: `${field.label} cannot be negative.` })
     } else if (value > spec.range) {

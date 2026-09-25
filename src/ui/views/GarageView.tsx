@@ -16,8 +16,17 @@ import { downloadCsv, downloadFile } from '../download'
 import { csvFilename, garageCsv } from '../../core/csv'
 import { exportGarage, importGarage, suggestExportFilename } from '../../core/storage'
 import { massFromKg, massToKg } from '../../core/units'
-import { BIKE_TEMPLATES } from '../../data/presets'
-import type { Bike, GarageData, Preferences } from '../../core/types'
+import type { AdjusterDirection, SuspensionUnit } from '../../core/units'
+import {
+  SETUP_FIELDS,
+  displayForField,
+  emptySetup,
+  isAdjustable,
+  type SetupField,
+} from '../../core/setup'
+import { SetupSteppers } from '../components/SetupSteppers'
+import { newBike } from '../../data/presets'
+import type { AdjusterKey, AdjusterUnitPref, Bike, GarageData, Preferences } from '../../core/types'
 import type { Garage } from '../store'
 import type { Auth } from '../auth'
 
@@ -53,12 +62,12 @@ export function GarageView({ garage, auth }: { garage: Garage; auth: Auth }) {
     <>
       <Card
         title="Bikes"
-        hint="Recording what each adjuster can actually do lets the app catch an impossible setting before it goes in the log."
+        hint="A bike is just a name to hang track days and setups on. Open one to set how you count its adjusters and what it is currently set to."
         flush
       >
         {data.bikes.length === 0 ? (
           <EmptyState title="No bikes yet">
-            <p>Start from a template below and correct the numbers to match your machine.</p>
+            <p>Add one below — just a name to start. You can set it up afterwards.</p>
           </EmptyState>
         ) : (
           <ul className="list">
@@ -81,27 +90,13 @@ export function GarageView({ garage, auth }: { garage: Garage; auth: Auth }) {
           </ul>
         )}
         <div style={{ padding: 16, borderTop: '1px solid var(--line)' }}>
-          <SectionLabel>Add from a template</SectionLabel>
-          <div className="stack">
-            {BIKE_TEMPLATES.map((template) => (
-              <button
-                key={template.key}
-                type="button"
-                className="btn btn--block"
-                style={{ textAlign: 'left' }}
-                onClick={() => {
-                  const bike = template.build()
-                  update((current) => ({ ...current, bikes: [...current.bikes, bike] }))
-                  setEditingId(bike.id)
-                }}
-              >
-                <div style={{ fontWeight: 650 }}>{template.name}</div>
-                <div className="muted" style={{ fontSize: 13, fontWeight: 400 }}>
-                  {template.description}
-                </div>
-              </button>
-            ))}
-          </div>
+          <AddBikeForm
+            onAdd={(name) => {
+              const bike = newBike(name)
+              update((current) => ({ ...current, bikes: [...current.bikes, bike] }))
+              setEditingId(bike.id)
+            }}
+          />
         </div>
       </Card>
 
@@ -165,28 +160,8 @@ function UnitsCard({
     >
       <div className="grid grid--two">
         <SelectField
-          label="Suspension adjuster"
-          hint="How you count your clickers."
-          value={prefs.suspensionUnit}
-          options={[
-            { value: 'clicks', label: 'Clicks' },
-            { value: 'turns', label: 'Turns' },
-            { value: 'half-turns', label: 'Half turns' },
-          ]}
-          onChange={(suspensionUnit) => onChange({ ...prefs, suspensionUnit })}
-        />
-        <SelectField
-          label="Recording direction"
-          hint="Which end of the adjuster is zero."
-          value={prefs.adjusterDirection}
-          options={[
-            { value: 'hard-to-soft', label: 'Hardest → softest' },
-            { value: 'soft-to-hard', label: 'Softest → hardest' },
-          ]}
-          onChange={(adjusterDirection) => onChange({ ...prefs, adjusterDirection })}
-        />
-        <SelectField
           label="Rider weight"
+          hint="How you count your adjusters is set per bike, in the Garage."
           value={prefs.massUnit}
           options={[
             { value: 'lb', label: 'lb' },
@@ -380,8 +355,28 @@ function BikeEditor({
       </Card>
 
       <Card
+        title="Recording units"
+        hint="How you count each adjuster on this bike, and which way the number runs. The steppers and the setup diff follow this."
+      >
+        {SETUP_FIELDS.filter(isAdjustable).map((field) => (
+          <AdjusterUnitRow key={field.key} field={field} bike={bike} onChange={onChange} />
+        ))}
+      </Card>
+
+      <Card
+        title="Current setup"
+        hint="What the bike is set to right now. A new session starts from here, and it keeps up with your most recent recorded session."
+      >
+        <SetupSteppers
+          setup={bike.currentSetup ?? emptySetup()}
+          bike={bike}
+          onChange={(currentSetup) => onChange({ ...bike, currentSetup })}
+        />
+      </Card>
+
+      <Card
         title="Fork"
-        hint="Ranges are counted from fully closed for damping, and fully soft for preload."
+        hint="Ranges are counted from fully closed for damping, and fully soft for preload. Leave a range at 0 if you are not tracking it."
       >
         <div className="grid grid--two">
           <NumberField
@@ -535,6 +530,90 @@ function BikeEditor({
         )}
       </Card>
     </>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+
+function AddBikeForm({ onAdd }: { onAdd: (name: string) => void }) {
+  const [name, setName] = useState('')
+  return (
+    <>
+      <SectionLabel>Add a bike</SectionLabel>
+      <TextField
+        label="Name"
+        hint="Just something to identify it — set it up afterwards."
+        value={name}
+        onChange={setName}
+        placeholder="Race bike"
+      />
+      <button
+        type="button"
+        className="btn btn--primary btn--block"
+        style={{ marginTop: 8 }}
+        disabled={name.trim() === ''}
+        onClick={() => {
+          onAdd(name.trim())
+          setName('')
+        }}
+      >
+        Add bike
+      </button>
+    </>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+
+const UNIT_OPTIONS: { value: SuspensionUnit; label: string }[] = [
+  { value: 'clicks', label: 'Clicks' },
+  { value: 'turns', label: 'Turns' },
+  { value: 'half-turns', label: 'Half turns' },
+]
+
+const DIRECTION_OPTIONS: { value: AdjusterDirection; label: string }[] = [
+  { value: 'hard-to-soft', label: 'Hardest → softest' },
+  { value: 'soft-to-hard', label: 'Softest → hardest' },
+]
+
+/** One adjuster's recording unit, plus a direction if it has a firmer/softer axis. */
+function AdjusterUnitRow({
+  field,
+  bike,
+  onChange,
+}: {
+  field: SetupField
+  bike: Bike
+  onChange: (bike: Bike) => void
+}) {
+  const current = displayForField(field, bike)
+  const set = (patch: Partial<AdjusterUnitPref>) => {
+    const next: AdjusterUnitPref = { unit: current.unit, direction: current.direction, ...patch }
+    onChange({
+      ...bike,
+      adjusterUnits: { ...bike.adjusterUnits, [field.key as AdjusterKey]: next },
+    })
+  }
+  return (
+    <div style={{ marginBottom: 6 }}>
+      <SectionLabel>{field.label}</SectionLabel>
+      <div className="grid grid--two">
+        <SelectField
+          label="Unit"
+          value={current.unit}
+          options={UNIT_OPTIONS}
+          onChange={(unit) => set({ unit })}
+        />
+        {field.hardnessAxis && (
+          <SelectField
+            label="Direction"
+            value={current.direction}
+            options={DIRECTION_OPTIONS}
+            onChange={(direction) => set({ direction })}
+          />
+        )}
+      </div>
+    </div>
   )
 }
 

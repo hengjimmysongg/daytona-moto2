@@ -19,19 +19,14 @@ import type {
   SagTargets,
   Session,
   ShockSpec,
+  SuspensionSetup,
   TrackDay,
   Tyre,
   TyreModel,
   TyreRun,
   TyreWear,
 } from '../core/types.js'
-import type {
-  AdjusterDirection,
-  MassUnit,
-  PressureUnit,
-  SuspensionUnit,
-  TemperatureUnit,
-} from '../core/units.js'
+import type { MassUnit, PressureUnit, TemperatureUnit } from '../core/units.js'
 
 /** A row as PostgREST hands it back. */
 export type Row = Record<string, unknown>
@@ -70,6 +65,24 @@ function defined<T extends object>(value: T): T {
   return Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined)) as T
 }
 
+/** A stored setup, or undefined for the empty `{}` the column defaults to. */
+function toSetup(value: unknown): SuspensionSetup | undefined {
+  const raw = json<Partial<SuspensionSetup>>(value, {})
+  if (!raw || (raw.fork === undefined && raw.shock === undefined)) return undefined
+  return {
+    fork: raw.fork ?? {},
+    shock: raw.shock ?? {},
+    ...(raw.sag ? { sag: raw.sag } : {}),
+    ...(raw.geometry ? { geometry: raw.geometry } : {}),
+  }
+}
+
+/** Per-adjuster units, or undefined for the empty `{}` the column defaults to. */
+function toAdjusterUnits(value: unknown): Bike['adjusterUnits'] {
+  const raw = json<Record<string, unknown>>(value, {})
+  return raw && Object.keys(raw).length > 0 ? (raw as Bike['adjusterUnits']) : undefined
+}
+
 export function toBike(row: Row): Bike {
   return {
     id: String(row.id),
@@ -80,6 +93,8 @@ export function toBike(row: Row): Bike {
       year: num(row.year),
       riderWeightKg: num(row.rider_weight_kg),
       notes: text(row.notes),
+      adjusterUnits: toAdjusterUnits(row.adjuster_units),
+      currentSetup: toSetup(row.current_setup),
     }),
     fork: json<ForkSpec>(row.fork, {} as ForkSpec),
     shock: json<ShockSpec>(row.shock, {} as ShockSpec),
@@ -122,6 +137,8 @@ export function toTrackDay(row: Row): TrackDay {
     ...defined({
       layout: text(row.layout),
       organiser: text(row.organiser),
+      frontTyreId: text(row.front_tyre_id),
+      rearTyreId: text(row.rear_tyre_id),
       notes: text(row.notes),
     }),
     createdAt: Number(row.created_at),
@@ -196,9 +213,6 @@ export function toPreferences(row: Row, fallback: Preferences): Preferences {
     pressureUnit: (text(row.pressure_unit) as PressureUnit) ?? fallback.pressureUnit,
     temperatureUnit: (text(row.temperature_unit) as TemperatureUnit) ?? fallback.temperatureUnit,
     massUnit: (text(row.mass_unit) as MassUnit) ?? fallback.massUnit,
-    suspensionUnit: (text(row.suspension_unit) as SuspensionUnit) ?? fallback.suspensionUnit,
-    adjusterDirection:
-      (text(row.adjuster_direction) as AdjusterDirection) ?? fallback.adjusterDirection,
     targetHotPressure: {
       front: num(row.target_hot_front) ?? fallback.targetHotPressure.front,
       rear: num(row.target_hot_rear) ?? fallback.targetHotPressure.rear,
@@ -229,6 +243,8 @@ export function fromBike(bike: Bike): Row {
     fork: bike.fork,
     shock: bike.shock,
     sag_targets: bike.sagTargets,
+    adjuster_units: bike.adjusterUnits ?? {},
+    current_setup: bike.currentSetup ?? {},
     notes: orNull(bike.notes),
     created_at: bike.createdAt,
   }
@@ -260,6 +276,8 @@ export function fromTrackDay(day: TrackDay): Row {
     circuit: day.circuit,
     layout: orNull(day.layout),
     organiser: orNull(day.organiser),
+    front_tyre_id: orNull(day.frontTyreId),
+    rear_tyre_id: orNull(day.rearTyreId),
     notes: orNull(day.notes),
     created_at: day.createdAt,
   }
@@ -328,8 +346,6 @@ export function fromPreferences(prefs: Preferences, now: number): Row {
     pressure_unit: prefs.pressureUnit,
     temperature_unit: prefs.temperatureUnit,
     mass_unit: prefs.massUnit,
-    suspension_unit: prefs.suspensionUnit,
-    adjuster_direction: prefs.adjusterDirection,
     target_hot_front: prefs.targetHotPressure.front,
     target_hot_rear: prefs.targetHotPressure.rear,
     updated_at: now,

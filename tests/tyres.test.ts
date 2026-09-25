@@ -7,7 +7,8 @@ import {
   tyreUsage,
   wearGuidance,
 } from '../src/core/tyres'
-import type { Session } from '../src/core/types'
+import { createEmptyGarage } from '../src/core/storage'
+import type { GarageData, Session, TrackDay } from '../src/core/types'
 
 describe('pressureRise', () => {
   it('is hot minus cold', () => {
@@ -143,42 +144,56 @@ describe('wearGuidance', () => {
   })
 })
 
-function session(id: string, front?: string, rear?: string, at = 1000): Session {
+function daySession(id: string, trackDayId: string, at: number): Session {
   return {
     id,
-    trackDayId: 'day',
+    trackDayId,
     number: 1,
     startedAt: at,
     conditions: {},
     setup: { fork: {}, shock: {} },
-    tyres: {
-      front: front ? { tyreId: front } : {},
-      rear: rear ? { tyreId: rear } : {},
-    },
+    tyres: { front: {}, rear: {} },
     feedback: [],
     createdAt: at,
     updatedAt: at,
   }
 }
 
-describe('tyreUsage', () => {
-  it('counts a session once even if the tyre is on both ends of the record', () => {
-    const usage = tyreUsage([session('a', 'tyre1', 'tyre1', 100)], 'tyre1')
-    expect(usage.sessions).toBe(1)
-    expect(usage.heatCycles).toBe(1)
-    expect(usage.lastUsed).toBe(100)
-  })
+function day(id: string, fitted: { front?: string; rear?: string }): TrackDay {
+  return {
+    id,
+    bikeId: 'bike',
+    date: '2026-03-07',
+    circuit: 'Daytona',
+    createdAt: 0,
+    ...(fitted.front ? { frontTyreId: fitted.front } : {}),
+    ...(fitted.rear ? { rearTyreId: fitted.rear } : {}),
+  }
+}
 
-  it('tracks the most recent outing', () => {
-    const usage = tyreUsage(
-      [session('a', 'tyre1', undefined, 100), session('b', 'tyre1', undefined, 500)],
-      'tyre1',
+function garage(days: TrackDay[], sessions: Session[]): GarageData {
+  return { ...createEmptyGarage(0), trackDays: days, sessions }
+}
+
+describe('tyreUsage', () => {
+  it('counts every session run on a day the tyre is fitted for', () => {
+    const data = garage(
+      [day('d', { front: 'tyre1' })],
+      [daySession('a', 'd', 100), daySession('b', 'd', 500)],
     )
+    const usage = tyreUsage(data, 'tyre1')
     expect(usage.sessions).toBe(2)
+    expect(usage.heatCycles).toBe(2)
     expect(usage.lastUsed).toBe(500)
   })
 
+  it('counts a session once even when the tyre is set on both ends of a day', () => {
+    const data = garage([day('d', { front: 'tyre1', rear: 'tyre1' })], [daySession('a', 'd', 100)])
+    expect(tyreUsage(data, 'tyre1').sessions).toBe(1)
+  })
+
   it('ignores tyres that were never fitted', () => {
-    expect(tyreUsage([session('a', 'tyre1')], 'tyre2').sessions).toBe(0)
+    const data = garage([day('d', { front: 'tyre1' })], [daySession('a', 'd', 100)])
+    expect(tyreUsage(data, 'tyre2').sessions).toBe(0)
   })
 })
