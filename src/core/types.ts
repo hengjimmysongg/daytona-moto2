@@ -59,8 +59,7 @@ export interface ShockSpec {
   springRate?: number
   /** Rear wheel travel in mm. */
   travel?: number
-  compressionLow: AdjusterSpec
-  compressionHigh?: AdjusterSpec
+  compression: AdjusterSpec
   rebound: AdjusterSpec
   preload: AdjusterSpec
 }
@@ -83,8 +82,7 @@ export type AdjusterKey =
   | 'fork.compression'
   | 'fork.rebound'
   | 'fork.preload'
-  | 'shock.compressionLow'
-  | 'shock.compressionHigh'
+  | 'shock.compression'
   | 'shock.rebound'
   | 'shock.preload'
 
@@ -152,8 +150,7 @@ export interface SuspensionSetup {
     oilHeight?: number
   }
   shock: {
-    compressionLow?: number
-    compressionHigh?: number
+    compression?: number
     rebound?: number
     preload?: number
     /** Ride height, mm — length of the shock/linkage rod or a measured height. */

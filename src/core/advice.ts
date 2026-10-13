@@ -223,7 +223,7 @@ export const FEEDBACK_CATALOGUE: FeedbackItem[] = [
     phase: 'mid',
     description: 'Mid-corner bumps push the bike off line rather than being absorbed.',
     suggestions: [
-      damping('shock.compressionLow', false, 'shock low-speed compression', '2 clicks', 'Lets the rear follow the surface at lean instead of hopping over it.', 'medium'),
+      damping('shock.compression', false, 'shock compression', '2 clicks', 'Lets the rear follow the surface at lean instead of hopping over it.', 'medium'),
       damping('fork.compression', false, 'fork compression', '2 clicks', 'Same at the front.'),
       pressure('rear', false, 'Pressure that is too high stops the carcass absorbing anything.', 'low'),
     ],
@@ -237,7 +237,7 @@ export const FEEDBACK_CATALOGUE: FeedbackItem[] = [
     axle: 'rear',
     description: 'As you pick up the throttle the rear sits down, the front goes light and the bike drifts wide.',
     suggestions: [
-      damping('shock.compressionLow', true, 'shock low-speed compression', '1–2 clicks', 'Low-speed compression is exactly the circuit that controls squat under drive.', 'high'),
+      damping('shock.compression', true, 'shock compression', '1–2 clicks', 'Compression damping is what controls how much the rear squats under drive.', 'high'),
       geometry('shock.rideHeight', 'increase', 'Add 1–2 mm of rear ride height', 'Starts the rear higher so squatting does not take the geometry out of range.'),
       preload('shock.preload', true, 'shock preload', 'half a turn', 'Holds the rear up in its travel, but re-check rear sag afterwards.', 'low'),
     ],
@@ -250,7 +250,7 @@ export const FEEDBACK_CATALOGUE: FeedbackItem[] = [
     description: 'The rear lights up under acceleration rather than driving off the corner.',
     suggestions: [
       pressure('rear', false, 'Lower rear pressure puts more carcass on the ground and is the first thing to try for drive grip.', 'high'),
-      damping('shock.compressionLow', false, 'shock low-speed compression', '1–2 clicks', 'Letting the rear squat a little loads the tyre and finds mechanical grip.'),
+      damping('shock.compression', false, 'shock compression', '1–2 clicks', 'Letting the rear squat a little loads the tyre and finds mechanical grip.'),
       geometry('shock.rideHeight', 'decrease', 'Take 1–2 mm out of the rear ride height', 'A rear that is too high spins because the load is not going through the tyre.', 'low'),
     ],
   },
@@ -262,7 +262,7 @@ export const FEEDBACK_CATALOGUE: FeedbackItem[] = [
     description: 'Over repeated bumps the rear gets progressively lower and harsher until it is skipping.',
     suggestions: [
       damping('shock.rebound', false, 'shock rebound', '2 clicks', 'Packing down is the classic symptom of too much rebound: the shock cannot extend between bumps.', 'high'),
-      damping('shock.compressionHigh', false, 'shock high-speed compression', 'a quarter turn', 'Lets the sharp hits through so less energy has to be given back.', 'low'),
+      damping('shock.compression', false, 'shock compression', '1 click', 'Softer compression lets the sharp hits through so less energy has to be given back.', 'low'),
     ],
   },
   {
@@ -272,7 +272,7 @@ export const FEEDBACK_CATALOGUE: FeedbackItem[] = [
     axle: 'rear',
     description: 'A sharp hit throws the rear up rather than absorbing it.',
     suggestions: [
-      damping('shock.compressionHigh', false, 'shock high-speed compression', 'a quarter to half a turn', 'High-speed compression is the circuit sharp-edged hits actually use.', 'high'),
+      damping('shock.compression', false, 'shock compression', '1–2 clicks', 'Softer compression lets sharp-edged hits through instead of kicking the rear up.', 'high'),
       damping('shock.rebound', false, 'shock rebound', '1 click', 'Lets the rear recover before the next hit.'),
     ],
   },
@@ -283,7 +283,7 @@ export const FEEDBACK_CATALOGUE: FeedbackItem[] = [
     description: 'The front comes up far enough on exit that you have to shut off.',
     suggestions: [
       geometry('shock.rideHeight', 'decrease', 'Take 2 mm out of the rear ride height', 'Lowering the rear moves weight forward and keeps the front down under drive.', 'medium'),
-      damping('shock.compressionLow', true, 'shock low-speed compression', '1 click', 'Less squat keeps the geometry from working against you.', 'low'),
+      damping('shock.compression', true, 'shock compression', '1 click', 'Less squat keeps the geometry from working against you.', 'low'),
     ],
   },
 

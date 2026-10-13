@@ -23,7 +23,7 @@ function garage(): GarageData {
       preload: { range: 10, unit: 'turns' },
     },
     shock: {
-      compressionLow: { range: 20, unit: 'clicks' },
+      compression: { range: 20, unit: 'clicks' },
       rebound: { range: 20, unit: 'clicks' },
       preload: { range: 10, unit: 'turns' },
     },
@@ -104,7 +104,7 @@ describe('columns', () => {
       session({
         setup: {
           fork: { compression: 8, rebound: 10, preload: 3 },
-          shock: { compressionLow: 12, rebound: 14, preload: 2.5 },
+          shock: { compression: 12, rebound: 14, preload: 2.5 },
         },
       }),
     )
@@ -112,7 +112,7 @@ describe('columns', () => {
     expect(cell(csv, 'Fork compression (clicks)')).toBe('8')
     expect(cell(csv, 'Fork rebound (clicks)')).toBe('10')
     expect(cell(csv, 'Fork preload (turns)')).toBe('3')
-    expect(cell(csv, 'Shock low-speed compression (clicks)')).toBe('12')
+    expect(cell(csv, 'Shock compression (clicks)')).toBe('12')
     expect(cell(csv, 'Shock rebound (clicks)')).toBe('14')
     expect(cell(csv, 'Shock preload (turns)')).toBe('2.5')
   })

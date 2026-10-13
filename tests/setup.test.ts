@@ -22,7 +22,7 @@ function testBike(): Bike {
   b.fork.compression.range = 18
   b.fork.rebound.range = 18
   b.fork.preload.range = 8
-  b.shock.compressionLow.range = 18
+  b.shock.compression.range = 18
   b.shock.rebound.range = 18
   b.shock.preload.range = 10
   return b
@@ -32,7 +32,7 @@ const bike = testBike()
 
 const base: SuspensionSetup = {
   fork: { compression: 12, rebound: 10, preload: 4, height: 5 },
-  shock: { compressionLow: 12, rebound: 10, preload: 3, rideHeight: 0 },
+  shock: { compression: 12, rebound: 10, preload: 3, rideHeight: 0 },
 }
 
 describe('diffSetups', () => {
@@ -69,11 +69,9 @@ describe('diffSetups', () => {
   })
 
   it('handles a value being filled in or cleared', () => {
-    const withValue = { ...base, shock: { ...base.shock, compressionHigh: 2 } }
-    expect(diffSetups(base, withValue)[0]!.summary).toBe('Shock high-speed compression set to 2 turns')
-    expect(diffSetups(withValue, base)[0]!.summary).toBe(
-      'Shock high-speed compression cleared (was 2 turns)',
-    )
+    const withValue = { ...base, fork: { ...base.fork, oilHeight: 90 } }
+    expect(diffSetups(base, withValue)[0]!.summary).toBe('Fork oil height set to 90 mm')
+    expect(diffSetups(withValue, base)[0]!.summary).toBe('Fork oil height cleared (was 90 mm)')
   })
 
   it('picks up several changes at once', () => {

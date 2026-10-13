@@ -52,7 +52,7 @@ export function newBike(name: string, now: number = Date.now()): Bike {
       preload: { range: 0, unit: 'turns' },
     },
     shock: {
-      compressionLow: { range: 0, unit: 'clicks' },
+      compression: { range: 0, unit: 'clicks' },
       rebound: { range: 0, unit: 'clicks' },
       preload: { range: 0, unit: 'turns' },
     },

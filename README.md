@@ -42,7 +42,7 @@ app:
 ```sql
 select date, circuit, number, best_lap,
        fork_compression, fork_rebound, fork_preload,
-       shock_compression_low, shock_rebound, shock_preload,
+       shock_compression, shock_rebound, shock_preload,
        front_cold, front_warmer_temp, front_hot
 from sessions s join track_days d on d.id = s.track_day_id
 where best_lap is not null

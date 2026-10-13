@@ -421,14 +421,14 @@ function BikeEditor({
       <Card title="Shock">
         <div className="grid grid--two">
           <NumberField
-            label="Low-speed compression range"
-            value={String(bike.shock.compressionLow.range)}
+            label="Compression range"
+            value={String(bike.shock.compression.range)}
             suffix="clicks"
             onChange={(range) =>
               range !== undefined &&
               onChange({
                 ...bike,
-                shock: { ...bike.shock, compressionLow: { ...bike.shock.compressionLow, range } },
+                shock: { ...bike.shock, compression: { ...bike.shock.compression, range } },
               })
             }
           />
