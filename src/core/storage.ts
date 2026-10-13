@@ -10,7 +10,15 @@
  * keeps this module testable and makes it usable from a Node script.
  */
 
-import type { GarageData, Preferences, Session, SuspensionSetup, TrackDay } from './types.js'
+import type {
+  AdjusterUnitPref,
+  Bike,
+  GarageData,
+  Preferences,
+  Session,
+  SuspensionSetup,
+  TrackDay,
+} from './types.js'
 import { SCHEMA_VERSION } from './types.js'
 import { cloneSetup } from './setup.js'
 
@@ -177,6 +185,9 @@ export function migrate(raw: unknown): GarageData {
   // on the track day. Lift it up so imported logs keep their tyre-life counts.
   if (version < 2) backfillDayTyres(data)
 
+  // Before schema 3 the shock had separate low- and high-speed compression.
+  if (version < 3) foldCompressionEverywhere(data)
+
   return data
 }
 
@@ -200,6 +211,56 @@ function backfillDayTyres(data: GarageData): void {
       if (withRear) day.rearTyreId = withRear.tyres.rear.tyreId
     }
   }
+}
+
+/**
+ * Shocks used to carry separate low- and high-speed compression adjusters;
+ * they are one `compression` adjuster now. Anything written before that still
+ * says `compressionLow`, so read it as `compression` — the circuit nearly
+ * every rider was logging — and drop the high-speed one, which nothing reads
+ * any more. Data that is already current comes back untouched, so this is
+ * safe on every load, not only on an import.
+ */
+export function foldShockCompression<T extends object>(shock: T): T {
+  const legacy = shock as T & { compression?: unknown; compressionLow?: unknown; compressionHigh?: unknown }
+  if (legacy.compressionLow === undefined && legacy.compressionHigh === undefined) return shock
+  const { compressionLow, compressionHigh, ...rest } = legacy
+  return (
+    rest.compression === undefined && compressionLow !== undefined
+      ? { ...rest, compression: compressionLow }
+      : rest
+  ) as T
+}
+
+/** The same fold for a bike's per-adjuster unit choices. */
+export function foldAdjusterUnits(units: Bike['adjusterUnits']): Bike['adjusterUnits'] {
+  const legacy = units as Record<string, AdjusterUnitPref | undefined> | undefined
+  if (!legacy || !('shock.compressionLow' in legacy || 'shock.compressionHigh' in legacy)) return units
+  const { 'shock.compressionLow': low, 'shock.compressionHigh': high, ...rest } = legacy
+  return (
+    rest['shock.compression'] === undefined && low !== undefined
+      ? { ...rest, 'shock.compression': low }
+      : rest
+  ) as Bike['adjusterUnits']
+}
+
+function foldSetup(setup: SuspensionSetup): SuspensionSetup {
+  return { ...setup, shock: foldShockCompression(setup.shock ?? {}) }
+}
+
+function foldCompressionEverywhere(data: GarageData): void {
+  data.bikes = data.bikes.map((bike) => ({
+    ...bike,
+    shock: foldShockCompression(bike.shock ?? {}),
+    ...(bike.adjusterUnits ? { adjusterUnits: foldAdjusterUnits(bike.adjusterUnits) } : {}),
+    ...(bike.currentSetup ? { currentSetup: foldSetup(bike.currentSetup) } : {}),
+  }))
+  data.sessions = data.sessions.map((session) =>
+    session.setup ? { ...session, setup: foldSetup(session.setup) } : session,
+  )
+  data.presets = data.presets.map((preset) =>
+    preset.setup ? { ...preset, setup: foldSetup(preset.setup) } : preset,
+  )
 }
 
 function mergePreferences(base: Preferences, raw: unknown): Preferences {

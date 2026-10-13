@@ -331,7 +331,7 @@ export interface Preferences {
 }
 
 /** Bumped whenever the persisted shape changes; see `storage.ts`. */
-export const SCHEMA_VERSION = 2
+export const SCHEMA_VERSION = 3
 
 export interface GarageData {
   version: number

@@ -4,6 +4,8 @@ import {
   createEmptyGarage,
   defaultPreferences,
   exportGarage,
+  foldAdjusterUnits,
+  foldShockCompression,
   ImportError,
   importGarage,
   loadGarage,
@@ -302,5 +304,56 @@ describe('queries', () => {
   it('has no previous session for the first one out', () => {
     const first = sessionsForDay(data, 'day1')[0]!
     expect(previousSession(data, first)).toBeUndefined()
+  })
+})
+
+describe('migrate folds the old split shock compression', () => {
+  const v2Bike = {
+    id: 'b',
+    name: 'Old bike',
+    fork: {},
+    shock: {
+      compressionLow: { range: 20, unit: 'clicks' },
+      compressionHigh: { range: 3, unit: 'turns' },
+      rebound: { range: 20, unit: 'clicks' },
+      preload: { range: 10, unit: 'turns' },
+    },
+    sagTargets: {},
+    adjusterUnits: { 'shock.compressionLow': { unit: 'clicks', direction: 'hard-to-soft' } },
+    currentSetup: { fork: {}, shock: { compressionLow: 12, compressionHigh: 1.5, rebound: 10 } },
+    createdAt: 0,
+  }
+
+  it('reads compressionLow as compression on bikes, sessions and presets from a v2 file', () => {
+    const imported = importGarage(
+      JSON.stringify({
+        version: 2,
+        bikes: [v2Bike],
+        sessions: [{ ...session('s', 'd', 1), setup: { fork: {}, shock: { compressionLow: 9 } } }],
+        presets: [
+          { id: 'p', bikeId: 'b', name: 'Wet', setup: { fork: {}, shock: { compressionLow: 14 } }, createdAt: 0 },
+        ],
+      }),
+    )
+    const bike = imported.bikes[0]!
+    expect(bike.shock.compression).toEqual({ range: 20, unit: 'clicks' })
+    expect('compressionLow' in bike.shock).toBe(false)
+    expect('compressionHigh' in bike.shock).toBe(false)
+    expect(bike.adjusterUnits).toEqual({ 'shock.compression': { unit: 'clicks', direction: 'hard-to-soft' } })
+    expect(bike.currentSetup?.shock).toEqual({ compression: 12, rebound: 10 })
+    expect(imported.sessions[0]!.setup.shock).toEqual({ compression: 9 })
+    expect(imported.presets[0]!.setup.shock).toEqual({ compression: 14 })
+  })
+
+  it('leaves data that is already current untouched', () => {
+    const shock = { compression: { range: 18, unit: 'clicks' } }
+    expect(foldShockCompression(shock)).toBe(shock)
+    const units = { 'shock.compression': { unit: 'clicks', direction: 'hard-to-soft' } } as const
+    expect(foldAdjusterUnits(units)).toBe(units)
+    expect(foldAdjusterUnits(undefined)).toBeUndefined()
+  })
+
+  it('keeps a current compression value over a stale compressionLow beside it', () => {
+    expect(foldShockCompression({ compression: 8, compressionLow: 12 })).toEqual({ compression: 8 })
   })
 })

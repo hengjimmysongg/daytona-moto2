@@ -12,6 +12,7 @@
  */
 
 import { EMPTY_SETUP } from '../core/types.js'
+import { foldAdjusterUnits, foldShockCompression } from '../core/storage.js'
 import type {
   Bike,
   ForkSpec,
@@ -71,7 +72,7 @@ function toSetup(value: unknown): SuspensionSetup | undefined {
   if (!raw || (raw.fork === undefined && raw.shock === undefined)) return undefined
   return {
     fork: raw.fork ?? {},
-    shock: raw.shock ?? {},
+    shock: foldShockCompression(raw.shock ?? {}),
     ...(raw.sag ? { sag: raw.sag } : {}),
     ...(raw.geometry ? { geometry: raw.geometry } : {}),
   }
@@ -80,7 +81,9 @@ function toSetup(value: unknown): SuspensionSetup | undefined {
 /** Per-adjuster units, or undefined for the empty `{}` the column defaults to. */
 function toAdjusterUnits(value: unknown): Bike['adjusterUnits'] {
   const raw = json<Record<string, unknown>>(value, {})
-  return raw && Object.keys(raw).length > 0 ? (raw as Bike['adjusterUnits']) : undefined
+  return raw && Object.keys(raw).length > 0
+    ? foldAdjusterUnits(raw as Bike['adjusterUnits'])
+    : undefined
 }
 
 export function toBike(row: Row): Bike {
@@ -97,7 +100,9 @@ export function toBike(row: Row): Bike {
       currentSetup: toSetup(row.current_setup),
     }),
     fork: json<ForkSpec>(row.fork, {} as ForkSpec),
-    shock: json<ShockSpec>(row.shock, {} as ShockSpec),
+    // A bike saved before the shock's compression adjusters were merged still
+    // says `compressionLow`; see `foldShockCompression`.
+    shock: foldShockCompression(json<ShockSpec>(row.shock, {} as ShockSpec)),
     sagTargets: json<SagTargets>(row.sag_targets, {} as SagTargets),
     createdAt: Number(row.created_at),
   }
