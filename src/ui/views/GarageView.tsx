@@ -14,6 +14,7 @@ import {
 import { fmtMass, pressureFromInput, pressureInputValue, todayIso } from '../format'
 import { downloadCsv, downloadFile } from '../download'
 import { csvFilename, garageCsv } from '../../core/csv'
+import { deleteBike } from '../../core/deletion'
 import { exportGarage, importGarage, suggestExportFilename } from '../../core/storage'
 import { massFromKg, massToKg } from '../../core/units'
 import type { AdjusterDirection, SuspensionUnit } from '../../core/units'
@@ -47,10 +48,7 @@ export function GarageView({ garage, auth }: { garage: Garage; auth: Auth }) {
           }))
         }
         onDelete={() => {
-          update((current) => ({
-            ...current,
-            bikes: current.bikes.filter((bike) => bike.id !== editing.id),
-          }))
+          update((current) => deleteBike(current, editing.id))
           setEditingId(null)
         }}
         onDone={() => setEditingId(null)}

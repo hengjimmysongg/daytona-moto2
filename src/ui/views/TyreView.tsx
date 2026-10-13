@@ -9,6 +9,7 @@ import {
   TextField,
 } from '../components/kit'
 import { tyreUsage } from '../../core/tyres'
+import { deleteTyre } from '../../core/deletion'
 import { newId } from '../../core/id'
 import { describeTyre, TYRE_MODELS } from '../../data/presets'
 import type { Axle, Tyre } from '../../core/types'
@@ -133,18 +134,7 @@ export function TyreView({ garage }: { garage: Garage }) {
                     <button
                       type="button"
                       className="btn btn--sm btn--danger"
-                      onClick={() =>
-                        update((current) => ({
-                          ...current,
-                          tyres: current.tyres.filter((candidate) => candidate.id !== tyre.id),
-                          // Any day this tyre was fitted to loses the reference.
-                          trackDays: current.trackDays.map((day) => ({
-                            ...day,
-                            ...(day.frontTyreId === tyre.id ? { frontTyreId: undefined } : {}),
-                            ...(day.rearTyreId === tyre.id ? { rearTyreId: undefined } : {}),
-                          })),
-                        }))
-                      }
+                      onClick={() => update((current) => deleteTyre(current, tyre.id))}
                     >
                       Delete
                     </button>
