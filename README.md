@@ -255,11 +255,15 @@ src/core/     the domain, with no UI and no database in it
   csv.ts        the log as a sheet: one row per session, in the rider's units
 src/data/     the outside world
   supabase.ts   the connection, and the two public values it needs
+  reachability.ts  whether the database can be reached, and if not, whether
+                the project is down or the device is offline
   rows.ts       Postgres rows to domain objects and back
   presets.ts    bike templates, circuits, tyre models — editable defaults
 src/ui/       React views
   auth.ts       who is signed in, over Supabase Auth
   store.ts      the log, read and written straight to Postgres
+  writer.ts     the one loop that writes it, holding what has not landed
+  connection.ts the connection state on screen, and looking again until it is back
 tests/        the calculators, the CSV, the conventions that are easy to
               invert, and the failure paths
 ```
@@ -267,4 +271,14 @@ tests/        the calculators, the CSV, the conventions that are easy to
 The core has no React and no SQL in it, which is why the calculators are
 tested without either. `store.ts` is the only place that writes: it diffs the
 document against the last one the database confirmed and sends just the rows
-that moved, so editing one clicker is one `UPDATE`.
+that moved, so editing one clicker is one `UPDATE`. Nothing is written until
+the log has loaded, a change that does not get through is held on screen and
+sent again — with the next edit, a retry, or the database coming back — and a
+change the database refuses outright is reported rather than retried.
+
+When the project is down (a free Supabase project pauses after a quiet week)
+the browser sees only a failed request, the same as having no signal.
+`reachability.ts` tells the two apart with an opaque `no-cors` request, which
+gets an answer from Supabase's edge even when the project behind it is gone,
+and the app says which it is within a second instead of passing on
+"Failed to fetch".

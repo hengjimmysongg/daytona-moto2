@@ -119,7 +119,7 @@ export function GarageView({ garage, auth }: { garage: Garage; auth: Auth }) {
  * panel, it is that every row in the database carries the owner's id and
  * Postgres refuses to hand over anybody else's.
  */
-function AccountCard({ auth }: { auth: Auth }) {
+export function AccountCard({ auth }: { auth: Auth }) {
   return (
     <Card title="Account" hint="Your log is stored against this account and nobody else can read it.">
       <Readout label="Signed in as" value={auth.account?.email ?? '—'} />

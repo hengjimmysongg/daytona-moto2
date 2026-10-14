@@ -8,8 +8,8 @@
  */
 
 import { useCallback, useEffect, useState } from 'react'
-import type { Session as AuthSession } from '@supabase/supabase-js'
-import { supabase } from '../data/supabase'
+import { isAuthRetryableFetchError, type Session as AuthSession } from '@supabase/supabase-js'
+import { AUTH_STORAGE_KEY, supabase } from '../data/supabase'
 
 export interface Account {
   id: string
@@ -27,6 +27,13 @@ export interface Auth {
    * before `account` or the app would just open behind the form.
    */
   recovering: boolean
+  /**
+   * True when this device holds a sign-in that could not be checked because
+   * the database did not answer. The rider is still signed in — the stored
+   * session is kept, and opens the log once a refresh gets through — so this
+   * must not be read as signed out, or they are shown "Create an account".
+   */
+  unreachable: boolean
   error?: string
   /** A word from the server worth showing, such as "confirm your email". */
   notice?: string
@@ -49,20 +56,26 @@ export function useAuth(): Auth {
   const [loading, setLoading] = useState(true)
   const [working, setWorking] = useState(false)
   const [recovering, setRecovering] = useState(false)
+  const [unreachable, setUnreachable] = useState(false)
   const [error, setError] = useState<string | undefined>(undefined)
   const [notice, setNotice] = useState<string | undefined>(undefined)
 
   useEffect(() => {
     let live = true
-    void supabase.auth.getSession().then(({ data }) => {
+    void supabase.auth.getSession().then(({ data, error: failed }) => {
       if (!live) return
       setAccount(toAccount(data.session))
+      // An expired token that could not be refreshed comes back as no
+      // session plus this error. The session is still stored; only the
+      // server was missing.
+      setUnreachable(!data.session && isAuthRetryableFetchError(failed))
       setLoading(false)
     })
     // Covers a token refresh and a sign-out in another tab, not just our own
     // calls, so the two stay in step.
     const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
       setAccount(toAccount(session))
+      if (session || event === 'SIGNED_OUT') setUnreachable(false)
       setLoading(false)
       // A reset link signs the rider in on a recovery session; hold them at the
       // new-password form instead of opening the app behind it.
@@ -81,7 +94,17 @@ export function useAuth(): Auth {
     try {
       setNotice(await run())
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Something went wrong. Try again.')
+      // auth-js reports a request that got no answer in the browser's own
+      // words — "Failed to fetch", "Load failed" — which say nothing to a
+      // rider. Whether it was the signal or the database, the note above the
+      // form says which.
+      setError(
+        isAuthRetryableFetchError(cause)
+          ? 'Could not reach the database. Try again in a moment.'
+          : cause instanceof Error
+            ? cause.message
+            : 'Something went wrong. Try again.',
+      )
     } finally {
       setWorking(false)
     }
@@ -112,7 +135,21 @@ export function useAuth(): Auth {
   const signOut = useCallback(
     () =>
       attempt(async () => {
-        await supabase.auth.signOut()
+        const { error: failed } = await supabase.auth.signOut()
+        // With the server out of reach and a token it could not refresh,
+        // auth-js keeps the sign-in and does nothing. Signing out on this
+        // device is still the rider's call, so forget it here and start the
+        // page over; the server forgets it when the token runs out.
+        if (failed && isAuthRetryableFetchError(failed)) {
+          try {
+            if (window.localStorage.getItem(AUTH_STORAGE_KEY) !== null) {
+              window.localStorage.removeItem(AUTH_STORAGE_KEY)
+              window.location.reload()
+            }
+          } catch {
+            // No storage to clear: nothing was kept on this device to begin with.
+          }
+        }
         return undefined
       }),
     [attempt],
@@ -152,6 +189,7 @@ export function useAuth(): Auth {
     loading,
     working,
     recovering,
+    unreachable,
     signUp,
     signIn,
     signOut,
