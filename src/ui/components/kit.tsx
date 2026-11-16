@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { useId } from 'react'
+import { useId, useState } from 'react'
 import { parseNumber } from '../../core/units'
 
 /* ---------------------------------------------------------- layout */
@@ -119,6 +119,30 @@ export function TextField({
 }
 
 /**
+ * The text in a numeric input while the rider is typing into it.
+ *
+ * A controlled input that renders the parsed number on every keystroke eats
+ * anything that parses the same as something shorter: `3.` is `3`, so the
+ * point disappears and "3.5 turns" of preload goes in as 35. Quarter turns
+ * and tenths of a psi are exactly the values that need the point.
+ *
+ * So while a field is being edited it shows the rider's own text, and the
+ * formatted value takes over again once they leave it.
+ */
+function useDraft(formatted: string): {
+  text: string
+  edit: (text: string) => void
+  done: () => void
+} {
+  const [draft, setDraft] = useState<string | null>(null)
+  return {
+    text: draft ?? formatted,
+    edit: setDraft,
+    done: () => setDraft(null),
+  }
+}
+
+/**
  * A numeric field that keeps what the rider typed while they are typing.
  *
  * Parsing on every keystroke and writing the parsed number back makes a
@@ -140,6 +164,7 @@ export function NumberField({
   suffix?: string
   placeholder?: string
 }) {
+  const draft = useDraft(value)
   return (
     <Field label={label} {...(hint ? { hint } : {})}>
       {(control) => (
@@ -148,10 +173,12 @@ export function NumberField({
             {...control}
             type="text"
             inputMode="decimal"
-            value={value}
+            value={draft.text}
             placeholder={placeholder ?? ''}
+            onBlur={draft.done}
             onChange={(event) => {
               const text = event.target.value
+              draft.edit(text)
               if (text.trim() === '') {
                 onChange(undefined)
                 return
@@ -259,8 +286,11 @@ export function Stepper({
   const hintId = `${id}-hint`
   const show = scale.toDisplay
   const delta = value !== undefined && baseline !== undefined ? value - baseline : undefined
+  const draft = useDraft(value === undefined ? '' : show(value))
 
   const nudge = (direction: 1 | -1) => {
+    // A button press is a new value, not more typing: show it formatted.
+    draft.done()
     const from = value ?? baseline ?? 0
     const next = Math.round((from + direction * step) * 1000) / 1000
     if (next < min) return
@@ -294,10 +324,12 @@ export function Stepper({
           type="text"
           inputMode="decimal"
           className="stepper__value"
-          value={value === undefined ? '' : show(value)}
+          value={draft.text}
           placeholder={baseline === undefined ? '—' : show(baseline)}
+          onBlur={draft.done}
           onChange={(event) => {
             const text = event.target.value
+            draft.edit(text)
             if (text.trim() === '') {
               onChange(undefined)
               return
