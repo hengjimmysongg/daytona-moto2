@@ -50,7 +50,9 @@ order by best_lap;
 ```
 
 What stays as `jsonb` is what nothing sorts on: a bike's adjuster ranges, its
-sag windows, and the feedback list, which is genuinely a list.
+sag windows and latest sag readings, and the feedback list, which is genuinely
+a list. A sag check logged against a session is not one of those — it lands in
+that session's `sag_*` columns like any other number.
 
 ### Who can read what
 

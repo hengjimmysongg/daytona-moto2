@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { analyseSag, computeSag, describePreloadChange, SagError, statusFor } from '../src/core/sag'
+import {
+  analyseSag,
+  computeSag,
+  describePreloadChange,
+  isSagRecorded,
+  recordedFor,
+  recordSag,
+  SagError,
+  statusFor,
+  type SagMeasurement,
+} from '../src/core/sag'
 import { TRACK_SAG_TARGETS } from '../src/data/presets'
 
 describe('computeSag', () => {
@@ -124,5 +134,55 @@ describe('analyseSag', () => {
     })
     expect(result.springVerdict).toBe('unknown')
     expect(result.notes.join(' ')).toMatch(/L2/)
+  })
+})
+
+describe('recording a check against a session', () => {
+  const check = (axle: 'front' | 'rear', measurement: SagMeasurement) =>
+    analyseSag({ axle, measurement, targets: TRACK_SAG_TARGETS })
+
+  it('writes rider and free sag for each end, to the tenth of a millimetre', () => {
+    const front = check('front', { extended: 600.3, bikeOnly: 572.5, withRider: 567.1 })
+    const rear = check('rear', { extended: 540, withRider: 512 })
+    expect(recordSag(undefined, { front, rear })).toEqual({
+      frontRider: 33.2,
+      frontFree: 27.8,
+      rearRider: 28,
+    })
+  })
+
+  it('leaves an end that was not measured as the session had it', () => {
+    const front = check('front', { extended: 600, withRider: 567 })
+    expect(recordSag({ rearRider: 27, rearFree: 8 }, { front })).toEqual({
+      frontRider: 33,
+      rearRider: 27,
+      rearFree: 8,
+    })
+  })
+
+  it('drops an old free sag when the end is re-checked without L2', () => {
+    // Otherwise the log would pair a new rider sag with a free sag from a
+    // different check, and the spring verdict would come from both.
+    const front = check('front', { extended: 600, withRider: 566 })
+    expect(recordSag({ frontRider: 33, frontFree: 28 }, { front })).toEqual({ frontRider: 34 })
+  })
+
+  it('knows when a session already holds this check', () => {
+    const front = check('front', { extended: 600, bikeOnly: 572, withRider: 567 })
+    const recorded = recordSag(undefined, { front })
+    expect(isSagRecorded(recorded, { front })).toBe(true)
+    expect(isSagRecorded({ ...recorded, rearRider: 30 }, { front })).toBe(true)
+    expect(isSagRecorded({ frontRider: 33 }, { front })).toBe(false)
+    expect(isSagRecorded(undefined, { front })).toBe(false)
+    expect(isSagRecorded(recorded, {})).toBe(false)
+  })
+
+  it('reads one end back out', () => {
+    expect(recordedFor({ frontRider: 33, rearRider: 28, rearFree: 7 }, 'rear')).toEqual({
+      rider: 28,
+      free: 7,
+    })
+    expect(recordedFor({ rearRider: 28 }, 'front')).toEqual({})
+    expect(recordedFor(undefined, 'front')).toEqual({})
   })
 })

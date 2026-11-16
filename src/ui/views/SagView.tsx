@@ -1,35 +1,30 @@
 import { useState } from 'react'
-import {
-  Badge,
-  Card,
-  EmptyState,
-  Note,
-  NumberField,
-  Readout,
-  SelectField,
-} from '../components/kit'
+import { Card, EmptyState, Note, NumberField, Readout, SelectField } from '../components/kit'
+import { formatSag, SagReadout } from '../components/sag'
+import { fmtDate } from '../format'
 import {
   analyseSagForBike,
   describePreloadChange,
+  isSagRecorded,
+  recordedFor,
+  recordSag,
   SagError,
-  type RangeStatus,
   type SagMeasurement,
   type SagResult,
+  type SagResults,
 } from '../../core/sag'
-import type { Axle, Bike } from '../../core/types'
+import { sessionsForBike } from '../../core/storage'
+import type { Axle, Bike, GarageData, SagReading, Session } from '../../core/types'
 import type { Garage } from '../store'
 
-type Draft = { extended: string; bikeOnly: string; withRider: string }
+const AXLES = ['front', 'rear'] as const
 
-const EMPTY_DRAFT: Draft = { extended: '', bikeOnly: '', withRider: '' }
+type Check = { result: SagResult | null; error: string | null }
 
 export function SagView({ garage }: { garage: Garage }) {
-  const { data } = garage
+  const { data, update } = garage
   const [bikeId, setBikeId] = useState<string>(data.bikes[0]?.id ?? '')
   const bike = data.bikes.find((candidate) => candidate.id === bikeId) ?? data.bikes[0]
-
-  const [front, setFront] = useState<Draft>(EMPTY_DRAFT)
-  const [rear, setRear] = useState<Draft>(EMPTY_DRAFT)
 
   if (!bike) {
     return (
@@ -39,6 +34,12 @@ export function SagView({ garage }: { garage: Garage }) {
         </EmptyState>
       </Card>
     )
+  }
+
+  const checks = { front: checkFor(bike, 'front'), rear: checkFor(bike, 'rear') }
+  const results: SagResults = {
+    ...(checks.front.result ? { front: checks.front.result } : {}),
+    ...(checks.rear.result ? { rear: checks.rear.result } : {}),
   }
 
   return (
@@ -69,8 +70,52 @@ export function SagView({ garage }: { garage: Garage }) {
         </Card>
       )}
 
-      <AxleSag axle="front" bike={bike} draft={front} onChange={setFront} />
-      <AxleSag axle="rear" bike={bike} draft={rear} onChange={setRear} />
+      {AXLES.map((axle) => (
+        <AxleSag
+          key={axle}
+          axle={axle}
+          bike={bike}
+          check={checks[axle]}
+          onChange={(reading) =>
+            // Readings belong to the bike, so they are saved and synced like
+            // everything else rather than held by this screen and lost the
+            // moment the rider looks at another tab.
+            update((current) => ({
+              ...current,
+              bikes: current.bikes.map((candidate) =>
+                candidate.id === bike.id
+                  ? {
+                      ...candidate,
+                      sagReadings: { ...candidate.sagReadings, [axle]: reading },
+                    }
+                  : candidate,
+              ),
+            }))
+          }
+        />
+      ))}
+
+      {Object.keys(results).length > 0 && (
+        <RecordCard
+          data={data}
+          bike={bike}
+          results={results}
+          onRecord={(session) =>
+            update((current) => ({
+              ...current,
+              sessions: current.sessions.map((candidate) =>
+                candidate.id === session.id
+                  ? {
+                      ...candidate,
+                      setup: { ...candidate.setup, sag: recordSag(candidate.setup.sag, results) },
+                      updatedAt: Date.now(),
+                    }
+                  : candidate,
+              ),
+            }))
+          }
+        />
+      )}
 
       <Card>
         <p className="muted" style={{ fontSize: 13, margin: 0 }}>
@@ -82,29 +127,36 @@ export function SagView({ garage }: { garage: Garage }) {
   )
 }
 
+function checkFor(bike: Bike, axle: Axle): Check {
+  const measurement = toMeasurement(bike.sagReadings?.[axle] ?? {})
+  if (!measurement) return { result: null, error: null }
+  try {
+    return { result: analyseSagForBike(bike, axle, measurement), error: null }
+  } catch (caught) {
+    return { result: null, error: caught instanceof SagError ? caught.message : String(caught) }
+  }
+}
+
 /* ------------------------------------------------------------------ */
 
 function AxleSag({
   axle,
   bike,
-  draft,
+  check,
   onChange,
 }: {
   axle: Axle
   bike: Bike
-  draft: Draft
-  onChange: (draft: Draft) => void
+  check: Check
+  onChange: (reading: SagReading) => void
 }) {
-  const measurement = toMeasurement(draft)
-  let result: SagResult | null = null
-  let error: string | null = null
-
-  if (measurement) {
-    try {
-      result = analyseSagForBike(bike, axle, measurement)
-    } catch (caught) {
-      error = caught instanceof SagError ? caught.message : String(caught)
-    }
+  const reading = bike.sagReadings?.[axle] ?? {}
+  const { result, error } = check
+  const set = (key: keyof SagReading, value: number | undefined) => {
+    const next = { ...reading }
+    if (value === undefined) delete next[key]
+    else next[key] = value
+    onChange(next)
   }
 
   const title = axle === 'front' ? 'Front' : 'Rear'
@@ -114,21 +166,21 @@ function AxleSag({
       <div className="grid">
         <NumberField
           label="L1 extended"
-          value={draft.extended}
+          value={reading.extended === undefined ? '' : String(reading.extended)}
           suffix="mm"
-          onChange={(value) => onChange({ ...draft, extended: value === undefined ? '' : String(value) })}
+          onChange={(value) => set('extended', value)}
         />
         <NumberField
           label="L2 bike only"
-          value={draft.bikeOnly}
+          value={reading.bikeOnly === undefined ? '' : String(reading.bikeOnly)}
           suffix="mm"
-          onChange={(value) => onChange({ ...draft, bikeOnly: value === undefined ? '' : String(value) })}
+          onChange={(value) => set('bikeOnly', value)}
         />
         <NumberField
           label="L3 with rider"
-          value={draft.withRider}
+          value={reading.withRider === undefined ? '' : String(reading.withRider)}
           suffix="mm"
-          onChange={(value) => onChange({ ...draft, withRider: value === undefined ? '' : String(value) })}
+          onChange={(value) => set('withRider', value)}
         />
       </div>
 
@@ -136,18 +188,9 @@ function AxleSag({
 
       {result && (
         <>
-          <Readout
-            label={`Rider sag · target ${formatWindow(result.riderSagTarget)}`}
-            value={`${round(result.riderSag)} mm`}
-            large
-            trailing={<StatusBadge status={result.riderSagStatus} />}
-          />
+          <SagReadout label="Rider sag" mm={result.riderSag} target={result.riderSagTarget} large />
           {result.freeSag !== undefined && result.freeSagTarget && (
-            <Readout
-              label={`Free sag · target ${formatWindow(result.freeSagTarget)}`}
-              value={`${round(result.freeSag)} mm`}
-              trailing={<StatusBadge status={result.freeSagStatus ?? 'ok'} />}
-            />
+            <SagReadout label="Free sag" mm={result.freeSag} target={result.freeSagTarget} />
           )}
 
           <div style={{ marginTop: 14 }}>
@@ -183,29 +226,96 @@ function AxleSag({
   )
 }
 
-function StatusBadge({ status }: { status: RangeStatus }) {
-  if (status === 'ok') return <Badge tone="ok">In window</Badge>
-  return <Badge tone="warn">{status === 'low' ? 'Too little' : 'Too much'}</Badge>
+/* ------------------------------------------------------------------ */
+
+/**
+ * Log the check against a session, so the session shows what the bike was
+ * actually sitting at when it ran rather than only what the clickers said.
+ */
+function RecordCard({
+  data,
+  bike,
+  results,
+  onRecord,
+}: {
+  data: GarageData
+  bike: Bike
+  results: SagResults
+  onRecord: (session: Session) => void
+}) {
+  const sessions = sessionsForBike(data, bike.id)
+  const [chosenId, setChosenId] = useState('')
+  // Newest first, so the usual case — sag checked before the next session
+  // goes out — needs no choosing at all.
+  const session = sessions.find((candidate) => candidate.id === chosenId) ?? sessions[0]
+
+  if (!session) {
+    return (
+      <Card title="Log this check">
+        <p className="muted" style={{ fontSize: 13, margin: 0 }}>
+          Add a session to a track day on {bike.name} to record sag against it.
+        </p>
+      </Card>
+    )
+  }
+
+  const label = (candidate: Session) => {
+    const day = data.trackDays.find((entry) => entry.id === candidate.trackDayId)
+    return day
+      ? `Session ${candidate.number} · ${day.circuit} · ${fmtDate(day.date)}`
+      : `Session ${candidate.number}`
+  }
+
+  const recorded = isSagRecorded(session.setup.sag, results)
+  const measured = AXLES.filter((axle) => results[axle])
+  const replacing = measured.some(
+    (axle) => Object.keys(recordedFor(session.setup.sag, axle)).length > 0,
+  )
+
+  return (
+    <Card title="Log this check" hint="Saves rider and free sag to a session's setup.">
+      {sessions.length > 1 && (
+        <SelectField
+          label="Session"
+          value={session.id}
+          options={sessions.map((candidate) => ({ value: candidate.id, label: label(candidate) }))}
+          onChange={setChosenId}
+        />
+      )}
+
+      <p className="muted" style={{ fontSize: 13, margin: '0 0 12px' }}>
+        {measured.map((axle) => describe(axle, results[axle] as SagResult)).join(' · ')}
+        {measured.length === 1 &&
+          ` · the ${measured[0] === 'front' ? 'rear' : 'front'} is left as the session has it`}
+      </p>
+
+      {recorded ? (
+        <Note tone="ok">Recorded on {label(session)}.</Note>
+      ) : (
+        <>
+          {replacing && (
+            <Note tone="warn">This replaces the sag already recorded on that session.</Note>
+          )}
+          <button
+            type="button"
+            className="btn btn--primary btn--block"
+            onClick={() => onRecord(session)}
+          >
+            Record to session {session.number}
+          </button>
+        </>
+      )}
+    </Card>
+  )
 }
 
-function toMeasurement(draft: Draft): SagMeasurement | null {
-  const extended = Number(draft.extended)
-  const withRider = Number(draft.withRider)
-  if (draft.extended === '' || draft.withRider === '') return null
-  if (!Number.isFinite(extended) || !Number.isFinite(withRider)) return null
-
-  const measurement: SagMeasurement = { extended, withRider }
-  const bikeOnly = Number(draft.bikeOnly)
-  if (draft.bikeOnly !== '' && Number.isFinite(bikeOnly)) measurement.bikeOnly = bikeOnly
-  return measurement
+function describe(axle: Axle, result: SagResult): string {
+  const end = axle === 'front' ? 'Front' : 'Rear'
+  const free = result.freeSag === undefined ? '' : `, free ${formatSag(result.freeSag)}`
+  return `${end}: rider ${formatSag(result.riderSag)}${free}`
 }
 
-/** Not named `window`: that shadows the global inside this module and
- *  breaks anything that reaches for it, React Refresh included. */
-function formatWindow([min, max]: readonly [number, number]): string {
-  return `${min}–${max} mm`
-}
-
-function round(value: number): string {
-  return (Math.round(value * 10) / 10).toFixed(1)
+function toMeasurement({ extended, bikeOnly, withRider }: SagReading): SagMeasurement | null {
+  if (extended === undefined || withRider === undefined) return null
+  return bikeOnly === undefined ? { extended, withRider } : { extended, bikeOnly, withRider }
 }

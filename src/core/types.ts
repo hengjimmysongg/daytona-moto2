@@ -96,6 +96,22 @@ export interface AdjusterUnitPref {
   direction: AdjusterDirection
 }
 
+/**
+ * One end's sag readings as taken, in mm between the same two points.
+ *
+ * Every reading is optional on its own: L1 is taken with the wheel in the
+ * air and L3 only once the rider is aboard in full kit, so a half-finished
+ * check is a normal thing to have and must survive leaving the screen.
+ */
+export interface SagReading {
+  /** L1 — fully extended, wheel unloaded. */
+  extended?: number
+  /** L2 — bike's own weight only. */
+  bikeOnly?: number
+  /** L3 — with the rider aboard. */
+  withRider?: number
+}
+
 export interface Bike {
   id: string
   name: string
@@ -120,6 +136,8 @@ export interface Bike {
    * A new session starts from here.
    */
   currentSetup?: SuspensionSetup
+  /** The latest sag check, as entered on the Sag tab. */
+  sagReadings?: { front?: SagReading; rear?: SagReading }
   notes?: string
   createdAt: Timestamp
 }

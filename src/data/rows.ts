@@ -5,7 +5,8 @@
  * filter on -- every adjuster, every pressure, every temperature -- is its
  * own column, so the log is queryable in SQL and not just in this app. Only
  * what nothing queries on stays as jsonb: a bike's adjuster ranges, its sag
- * windows, and the list of feedback codes, which is genuinely a list.
+ * windows and latest sag readings, and the list of feedback codes, which is
+ * genuinely a list.
  *
  * Units are canonical on both sides: bar, °C, mm, kg. What the rider reads
  * is a display preference and never reaches the database.
@@ -78,6 +79,12 @@ function toSetup(value: unknown): SuspensionSetup | undefined {
   }
 }
 
+/** Sag readings, or undefined for the empty `{}` the column defaults to. */
+function toSagReadings(value: unknown): Bike['sagReadings'] {
+  const raw = json<Bike['sagReadings']>(value, {})
+  return raw && Object.keys(raw).length > 0 ? raw : undefined
+}
+
 /** Per-adjuster units, or undefined for the empty `{}` the column defaults to. */
 function toAdjusterUnits(value: unknown): Bike['adjusterUnits'] {
   const raw = json<Record<string, unknown>>(value, {})
@@ -98,6 +105,7 @@ export function toBike(row: Row): Bike {
       notes: text(row.notes),
       adjusterUnits: toAdjusterUnits(row.adjuster_units),
       currentSetup: toSetup(row.current_setup),
+      sagReadings: toSagReadings(row.sag_readings),
     }),
     fork: json<ForkSpec>(row.fork, {} as ForkSpec),
     // A bike saved before the shock's compression adjusters were merged still
@@ -249,6 +257,7 @@ export function fromBike(bike: Bike): Row {
     sag_targets: bike.sagTargets,
     adjuster_units: bike.adjusterUnits ?? {},
     current_setup: bike.currentSetup ?? {},
+    sag_readings: bike.sagReadings ?? {},
     notes: orNull(bike.notes),
     created_at: bike.createdAt,
   }

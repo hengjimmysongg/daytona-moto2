@@ -13,6 +13,7 @@ import {
   previousSession,
   reconcileCurrentSetup,
   saveGarage,
+  sessionsForBike,
   sessionsForDay,
   setBikeCurrentSetup,
   STORAGE_KEY,
@@ -222,6 +223,51 @@ describe('current setup helpers', () => {
     const data: GarageData = { ...createEmptyGarage(0), bikes: [manual] }
     expect(reconcileCurrentSetup(data, 'bike')).toBe(data)
     expect(reconcileCurrentSetup(data, 'bike').bikes[0]!.currentSetup?.fork.compression).toBe(5)
+  })
+
+  it('keeps sag measured on a session out of the current setup', () => {
+    // Otherwise the next day's first session, which starts from the current
+    // setup, would show an old sag check as if it had been taken again.
+    const data: GarageData = { ...createEmptyGarage(0), bikes: [bike] }
+    const set = setBikeCurrentSetup(data, 'bike', {
+      fork: { compression: 10 },
+      shock: {},
+      sag: { frontRider: 33 },
+    })
+    expect(set.bikes[0]!.currentSetup).toEqual({ fork: { compression: 10 }, shock: {} })
+    // ...and recording sag alone is not a change to what the bike is set to.
+    expect(setBikeCurrentSetup(set, 'bike', { fork: { compression: 10 }, shock: {}, sag: { frontRider: 34 } })).toBe(set)
+  })
+})
+
+describe('sessionsForBike', () => {
+  const data: GarageData = {
+    ...createEmptyGarage(0),
+    trackDays: [day('day1', '2026-03-07'), day('day2', '2026-05-01'), { ...day('spare', '2026-06-01'), bikeId: 'spare' }],
+    sessions: [
+      session('s1', 'day1', 1),
+      session('s3', 'day1', 3),
+      session('s2', 'day1', 2),
+      session('later', 'day2', 1),
+      session('spare1', 'spare', 1),
+    ],
+  }
+
+  it('lists a bike’s sessions newest first, across days, and only that bike’s', () => {
+    expect(sessionsForBike(data, 'bike').map((s) => s.id)).toEqual(['later', 's3', 's2', 's1'])
+    expect(sessionsForBike(data, 'spare').map((s) => s.id)).toEqual(['spare1'])
+  })
+
+  it('keeps two days on the same date apart', () => {
+    const sameDate: GarageData = {
+      ...createEmptyGarage(0),
+      trackDays: [
+        { ...day('am', '2026-03-07'), createdAt: 1 },
+        { ...day('pm', '2026-03-07'), createdAt: 2 },
+      ],
+      sessions: [session('am1', 'am', 1), session('am2', 'am', 2), session('pm1', 'pm', 1)],
+    }
+    expect(sessionsForBike(sameDate, 'bike').map((s) => s.id)).toEqual(['pm1', 'am2', 'am1'])
   })
 })
 

@@ -312,6 +312,25 @@ export function previousSession(data: GarageData, session: Session): Session | u
   return index > 0 ? siblings[index - 1] : undefined
 }
 
+/** Every session run on one bike, newest first. */
+export function sessionsForBike(data: GarageData, bikeId: string): Session[] {
+  const days = new Map(
+    data.trackDays.filter((day) => day.bikeId === bikeId).map((day) => [day.id, day]),
+  )
+  return data.sessions
+    .filter((session) => days.has(session.trackDayId))
+    .sort((a, b) => {
+      const dayA = days.get(a.trackDayId)!
+      const dayB = days.get(b.trackDayId)!
+      // Two days on one date stay apart rather than interleaving by number.
+      return (
+        dayB.date.localeCompare(dayA.date) ||
+        dayB.createdAt - dayA.createdAt ||
+        b.number - a.number
+      )
+    })
+}
+
 /**
  * The most recent session recorded on a bike, across all its track days.
  * "Most recent" is the latest day, then the highest session number on it —
@@ -343,18 +362,23 @@ export function latestSessionForBike(data: GarageData, bikeId: string): Session 
  * the bike's newest word on what it is set to. Only the named bike is touched,
  * so an edit elsewhere never disturbs another bike's setup, and a value that
  * has not moved is left as-is so no needless write goes out.
+ *
+ * Sag measured on that session is left behind. It is a reading taken on one
+ * day, not a setting: carried into the current setup, it would reappear on
+ * the next track day's first session as if it had been measured again.
  */
 export function setBikeCurrentSetup(
   data: GarageData,
   bikeId: string,
   setup: SuspensionSetup,
 ): GarageData {
+  const { sag: _measured, ...settings } = cloneSetup(setup)
   const bike = data.bikes.find((candidate) => candidate.id === bikeId)
-  if (!bike || JSON.stringify(bike.currentSetup) === JSON.stringify(setup)) return data
+  if (!bike || JSON.stringify(bike.currentSetup) === JSON.stringify(settings)) return data
   return {
     ...data,
     bikes: data.bikes.map((candidate) =>
-      candidate.id === bikeId ? { ...candidate, currentSetup: cloneSetup(setup) } : candidate,
+      candidate.id === bikeId ? { ...candidate, currentSetup: settings } : candidate,
     ),
   }
 }

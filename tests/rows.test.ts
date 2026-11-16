@@ -34,3 +34,30 @@ describe('toBike', () => {
     expect(row.adjuster_units).not.toHaveProperty(['shock.compressionLow'])
   })
 })
+
+describe('sag readings', () => {
+  const row = {
+    id: 'b',
+    name: 'R6',
+    fork: {},
+    shock: {},
+    sag_targets: {},
+    created_at: 0,
+  }
+
+  it('round-trips a check, including a half-finished one', () => {
+    const sagReadings = { front: { extended: 600, bikeOnly: 572.5, withRider: 567 }, rear: { extended: 540 } }
+    const written = fromBike({ ...toBike(row), sagReadings })
+    expect(written.sag_readings).toEqual(sagReadings)
+    expect(toBike(written).sagReadings).toEqual(sagReadings)
+  })
+
+  it('reads the column default, and a row from before the column, as no readings', () => {
+    expect(toBike({ ...row, sag_readings: {} })).not.toHaveProperty('sagReadings')
+    expect(toBike(row)).not.toHaveProperty('sagReadings')
+  })
+
+  it('writes no readings as the empty object the column expects, never null', () => {
+    expect(fromBike(toBike(row)).sag_readings).toEqual({})
+  })
+})

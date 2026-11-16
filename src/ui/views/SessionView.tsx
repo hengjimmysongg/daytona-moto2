@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import {
   Badge,
   Card,
@@ -23,6 +23,7 @@ import {
 import { formatLapDelta, formatLapTime, parseLapTime } from '../../core/laptime'
 import { buildAdvice, FEEDBACK_CATALOGUE, PHASES } from '../../core/advice'
 import { diffSetups, validateSetup } from '../../core/setup'
+import { recordedFor, targetsFor, type RecordedSag } from '../../core/sag'
 import { pressureRise, recommendFromHistory, allWearOptions, wearGuidance } from '../../core/tyres'
 import {
   latestSessionForBike,
@@ -35,6 +36,7 @@ import { csvFilename, sessionCsv } from '../../core/csv'
 import { downloadCsv } from '../download'
 import { describeTyre } from '../../data/presets'
 import { SetupSteppers } from '../components/SetupSteppers'
+import { SagReadout } from '../components/sag'
 import type {
   Axle,
   Bike,
@@ -135,6 +137,19 @@ export function SessionView({
         bike={bike}
         onChange={onSetup}
       />
+
+      {session.setup.sag && Object.keys(session.setup.sag).length > 0 && (
+        <SagCard
+          sag={session.setup.sag}
+          bike={bike}
+          onRemove={() => {
+            // Sag is a reading, not a setting, so removing it leaves the
+            // bike's current setup alone: plain patch, not onSetup.
+            const { sag: _removed, ...setup } = session.setup
+            patch({ setup })
+          }}
+        />
+      )}
 
       {changes.length > 0 && (
         <Card title="Changed since last session">
@@ -449,6 +464,50 @@ function SetupCard({
         previousSetup={previous?.setup}
         onChange={onChange}
       />
+    </Card>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+
+/** Sag recorded against this session from the Sag tab. */
+function SagCard({
+  sag,
+  bike,
+  onRemove,
+}: {
+  sag: RecordedSag
+  bike: Bike | undefined
+  onRemove: () => void
+}) {
+  return (
+    <Card
+      title="Sag"
+      hint="Recorded from the Sag tab."
+      action={
+        <button type="button" className="btn btn--ghost btn--sm" onClick={onRemove}>
+          Remove
+        </button>
+      }
+    >
+      {(['front', 'rear'] as const).map((axle) => {
+        const { rider, free } = recordedFor(sag, axle)
+        if (rider === undefined && free === undefined) return null
+        const targets = bike ? targetsFor(bike.sagTargets, axle) : undefined
+        const end = axle === 'front' ? 'Front' : 'Rear'
+        // A fragment, not a wrapper: readouts are siblings so only the very
+        // last one drops its divider.
+        return (
+          <Fragment key={axle}>
+            {rider !== undefined && (
+              <SagReadout label={`${end} rider sag`} mm={rider} target={targets?.rider} />
+            )}
+            {free !== undefined && (
+              <SagReadout label={`${end} free sag`} mm={free} target={targets?.free} />
+            )}
+          </Fragment>
+        )
+      })}
     </Card>
   )
 }
