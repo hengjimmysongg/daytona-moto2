@@ -66,6 +66,7 @@ function rowToBike(row: Row): Bike {
       rearRider: [25, 30],
       rearFree: [5, 10],
     }),
+    ...optional('sagReadings', toJson<Bike['sagReadings']>(row.sag_readings, undefined)),
     ...optional('notes', toText(row.notes)),
     createdAt: Number(row.created_at),
   }
@@ -73,13 +74,14 @@ function rowToBike(row: Row): Bike {
 
 const BIKE_UPSERT = `
   INSERT INTO bikes (id, garage_id, name, make, model, year, rider_weight_kg,
-                     fork, shock, sag_targets, notes, created_at)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     fork, shock, sag_targets, sag_readings, notes, created_at)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   ON CONFLICT(id) DO UPDATE SET
     name = excluded.name, make = excluded.make, model = excluded.model,
     year = excluded.year, rider_weight_kg = excluded.rider_weight_kg,
     fork = excluded.fork, shock = excluded.shock,
-    sag_targets = excluded.sag_targets, notes = excluded.notes`
+    sag_targets = excluded.sag_targets, sag_readings = excluded.sag_readings,
+    notes = excluded.notes`
 
 function bikeArgs(garageId: string, bike: Bike) {
   return [
@@ -93,6 +95,7 @@ function bikeArgs(garageId: string, bike: Bike) {
     JSON.stringify(bike.fork),
     JSON.stringify(bike.shock),
     JSON.stringify(bike.sagTargets),
+    bike.sagReadings ? JSON.stringify(bike.sagReadings) : null,
     nullable(bike.notes),
     bike.createdAt,
   ]

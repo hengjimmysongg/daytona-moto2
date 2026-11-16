@@ -60,6 +60,7 @@ const SCHEMA = [
      fork            TEXT NOT NULL,
      shock           TEXT NOT NULL,
      sag_targets     TEXT NOT NULL,
+     sag_readings    TEXT,
      notes           TEXT,
      created_at      INTEGER NOT NULL
    )`,
@@ -165,10 +166,36 @@ const SCHEMA = [
    )`,
 ]
 
+/**
+ * Columns added after the first release.
+ *
+ * `CREATE TABLE IF NOT EXISTS` leaves an existing table exactly as it was,
+ * so a database created before a column existed has to be given it here.
+ * Each entry is only ever added to, never edited: the list is the history.
+ */
+const ADDED_COLUMNS: { table: string; column: string; definition: string }[] = [
+  { table: 'bikes', column: 'sag_readings', definition: 'TEXT' },
+]
+
 export async function migrate(db: Db): Promise<void> {
   for (const statement of SCHEMA) {
     await db.execute(statement)
   }
+  for (const { table, column, definition } of ADDED_COLUMNS) {
+    if (await hasColumn(db, table, column)) continue
+    try {
+      await db.execute(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`)
+    } catch (error) {
+      // Two cold instances can migrate the same database at once. Losing
+      // that race is fine as long as the column is there afterwards.
+      if (!(await hasColumn(db, table, column))) throw error
+    }
+  }
+}
+
+async function hasColumn(db: Db, table: string, column: string): Promise<boolean> {
+  const result = await db.execute(`PRAGMA table_info(${table})`)
+  return result.rows.some((row) => row.name === column)
 }
 
 /* ------------------------------------------------------------------ */

@@ -16,20 +16,13 @@ import {
   type SagMeasurement,
   type SagResult,
 } from '../../core/sag'
-import type { Axle, Bike } from '../../core/types'
+import type { Axle, Bike, SagReading } from '../../core/types'
 import type { Garage } from '../store'
 
-type Draft = { extended: string; bikeOnly: string; withRider: string }
-
-const EMPTY_DRAFT: Draft = { extended: '', bikeOnly: '', withRider: '' }
-
 export function SagView({ garage }: { garage: Garage }) {
-  const { data } = garage
+  const { data, update } = garage
   const [bikeId, setBikeId] = useState<string>(data.bikes[0]?.id ?? '')
   const bike = data.bikes.find((candidate) => candidate.id === bikeId) ?? data.bikes[0]
-
-  const [front, setFront] = useState<Draft>(EMPTY_DRAFT)
-  const [rear, setRear] = useState<Draft>(EMPTY_DRAFT)
 
   if (!bike) {
     return (
@@ -69,8 +62,29 @@ export function SagView({ garage }: { garage: Garage }) {
         </Card>
       )}
 
-      <AxleSag axle="front" bike={bike} draft={front} onChange={setFront} />
-      <AxleSag axle="rear" bike={bike} draft={rear} onChange={setRear} />
+      {(['front', 'rear'] as const).map((axle) => (
+        <AxleSag
+          key={axle}
+          axle={axle}
+          bike={bike}
+          onChange={(reading) =>
+            // Readings belong to the bike, so they are saved and synced like
+            // everything else rather than held by this screen and lost the
+            // moment the rider looks at another tab.
+            update((current) => ({
+              ...current,
+              bikes: current.bikes.map((candidate) =>
+                candidate.id === bike.id
+                  ? {
+                      ...candidate,
+                      sagReadings: { ...candidate.sagReadings, [axle]: reading },
+                    }
+                  : candidate,
+              ),
+            }))
+          }
+        />
+      ))}
 
       <Card>
         <p className="muted" style={{ fontSize: 13, margin: 0 }}>
@@ -87,15 +101,20 @@ export function SagView({ garage }: { garage: Garage }) {
 function AxleSag({
   axle,
   bike,
-  draft,
   onChange,
 }: {
   axle: Axle
   bike: Bike
-  draft: Draft
-  onChange: (draft: Draft) => void
+  onChange: (reading: SagReading) => void
 }) {
-  const measurement = toMeasurement(draft)
+  const reading = bike.sagReadings?.[axle] ?? {}
+  const measurement = toMeasurement(reading)
+  const set = (key: keyof SagReading, value: number | undefined) => {
+    const next = { ...reading }
+    if (value === undefined) delete next[key]
+    else next[key] = value
+    onChange(next)
+  }
   let result: SagResult | null = null
   let error: string | null = null
 
@@ -114,21 +133,21 @@ function AxleSag({
       <div className="grid">
         <NumberField
           label="L1 extended"
-          value={draft.extended}
+          value={reading.extended === undefined ? '' : String(reading.extended)}
           suffix="mm"
-          onChange={(value) => onChange({ ...draft, extended: value === undefined ? '' : String(value) })}
+          onChange={(value) => set('extended', value)}
         />
         <NumberField
           label="L2 bike only"
-          value={draft.bikeOnly}
+          value={reading.bikeOnly === undefined ? '' : String(reading.bikeOnly)}
           suffix="mm"
-          onChange={(value) => onChange({ ...draft, bikeOnly: value === undefined ? '' : String(value) })}
+          onChange={(value) => set('bikeOnly', value)}
         />
         <NumberField
           label="L3 with rider"
-          value={draft.withRider}
+          value={reading.withRider === undefined ? '' : String(reading.withRider)}
           suffix="mm"
-          onChange={(value) => onChange({ ...draft, withRider: value === undefined ? '' : String(value) })}
+          onChange={(value) => set('withRider', value)}
         />
       </div>
 
@@ -188,16 +207,9 @@ function StatusBadge({ status }: { status: RangeStatus }) {
   return <Badge tone="warn">{status === 'low' ? 'Too little' : 'Too much'}</Badge>
 }
 
-function toMeasurement(draft: Draft): SagMeasurement | null {
-  const extended = Number(draft.extended)
-  const withRider = Number(draft.withRider)
-  if (draft.extended === '' || draft.withRider === '') return null
-  if (!Number.isFinite(extended) || !Number.isFinite(withRider)) return null
-
-  const measurement: SagMeasurement = { extended, withRider }
-  const bikeOnly = Number(draft.bikeOnly)
-  if (draft.bikeOnly !== '' && Number.isFinite(bikeOnly)) measurement.bikeOnly = bikeOnly
-  return measurement
+function toMeasurement({ extended, bikeOnly, withRider }: SagReading): SagMeasurement | null {
+  if (extended === undefined || withRider === undefined) return null
+  return bikeOnly === undefined ? { extended, withRider } : { extended, bikeOnly, withRider }
 }
 
 /** Not named `window`: that shadows the global inside this module and

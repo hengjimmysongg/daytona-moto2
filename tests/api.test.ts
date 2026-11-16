@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { createDb, migrate, type Db } from '../src/server/db'
 import { handleApiRequest, type ApiDeps } from '../src/server/router'
-import { getSnapshot } from '../src/server/repository'
+import { getBike, getSnapshot, saveBike } from '../src/server/repository'
 
 const KEY = 'test-key-1234567890'
 
@@ -151,6 +151,22 @@ describe('bikes', () => {
     const read = await call('GET', `/api/bikes/${id}`)
     expect(read.body.shock.motionRatio).toBe(2.9)
     expect(read.body.shock.preload.mmPerTurn).toBe(1.5)
+  })
+
+  it('keeps sag readings, including a half-finished check', async () => {
+    const id = await seedBike()
+    const sagReadings = { front: { extended: 600, bikeOnly: 572.5, withRider: 567 }, rear: { extended: 540 } }
+    await call('PATCH', `/api/bikes/${id}`, { sagReadings })
+    expect((await call('GET', `/api/bikes/${id}`)).body.sagReadings).toEqual(sagReadings)
+
+    // Changing something else must not wipe them.
+    const patched = await call('PATCH', `/api/bikes/${id}`, { riderWeightKg: 82 })
+    expect(patched.body.sagReadings).toEqual(sagReadings)
+  })
+
+  it('has no sag readings until some are entered', async () => {
+    const id = await seedBike()
+    expect((await call('GET', `/api/bikes/${id}`)).body).not.toHaveProperty('sagReadings')
   })
 })
 
@@ -340,6 +356,17 @@ describe('garage snapshot', () => {
     expect(pushed.body.sessions[0].bestLap).toBe(112.34)
   })
 
+  it('round-trips sag readings entered on the Sag tab', async () => {
+    await seedBike()
+    const snapshot = (await call('GET', '/api/garage')).body
+    const sagReadings = { front: { extended: 600, withRider: 567 }, rear: { bikeOnly: 530 } }
+    snapshot.bikes[0].sagReadings = sagReadings
+
+    const pushed = await call('PUT', '/api/garage', snapshot)
+    expect(pushed.body.bikes[0].sagReadings).toEqual(sagReadings)
+    expect((await call('GET', '/api/garage')).body.bikes[0].sagReadings).toEqual(sagReadings)
+  })
+
   it('deletes rows the incoming document no longer has', async () => {
     await seedBike()
     const dayId = await seedDay()
@@ -354,6 +381,33 @@ describe('garage snapshot', () => {
   it('rejects a body that is not a snapshot', async () => {
     const pushed = await call('PUT', '/api/garage', { nonsense: true })
     expect(pushed.status).toBe(400)
+  })
+})
+
+describe('migration', () => {
+  it('adds the sag readings column to a database created before it existed', async () => {
+    const old = createDb({ url: ':memory:' })
+    await old.execute(`CREATE TABLE bikes (
+      id TEXT PRIMARY KEY, garage_id TEXT NOT NULL, name TEXT NOT NULL, make TEXT, model TEXT,
+      year INTEGER, rider_weight_kg REAL, fork TEXT NOT NULL, shock TEXT NOT NULL,
+      sag_targets TEXT NOT NULL, notes TEXT, created_at INTEGER NOT NULL)`)
+    await old.execute({
+      sql: `INSERT INTO bikes (id, garage_id, name, fork, shock, sag_targets, created_at)
+            VALUES ('bike_old', 'default', 'Old bike', '{}', '{}', '{}', 1)`,
+      args: [],
+    })
+
+    await migrate(old)
+    await migrate(old) // and running it again is harmless
+
+    const snapshot = await getSnapshot(old, 'default')
+    expect(snapshot.bikes.map((bike) => bike.name)).toEqual(['Old bike'])
+    expect(snapshot.bikes[0]).not.toHaveProperty('sagReadings')
+
+    // The point of the column: readings can now be written to the old table.
+    const bike = { ...snapshot.bikes[0]!, sagReadings: { front: { extended: 600 } } }
+    await saveBike(old, 'default', bike)
+    expect((await getBike(old, 'default', 'bike_old'))?.sagReadings).toEqual({ front: { extended: 600 } })
   })
 })
 

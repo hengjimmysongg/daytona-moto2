@@ -36,6 +36,13 @@ const adjuster = z.object({
 
 const sagWindow = z.tuple([z.number(), z.number()])
 
+/** L1/L2/L3 for one end, in mm. Any of them may be missing mid-check. */
+const sagReading = z.object({
+  extended: z.number().positive().optional(),
+  bikeOnly: z.number().positive().optional(),
+  withRider: z.number().positive().optional(),
+})
+
 export const bikeInput = z.object({
   id: z.string().min(1).optional(),
   name: requiredString('A bike needs a name.'),
@@ -70,6 +77,9 @@ export const bikeInput = z.object({
       rearRider: sagWindow,
       rearFree: sagWindow,
     })
+    .optional(),
+  sagReadings: z
+    .object({ front: sagReading.optional(), rear: sagReading.optional() })
     .optional(),
   notes: z.string().optional(),
 })
@@ -220,6 +230,7 @@ export function buildBike(input: z.infer<typeof bikeInput>, existing?: Bike, now
     fork: input.fork ?? existing?.fork ?? DEFAULT_FORK,
     shock: input.shock ?? existing?.shock ?? DEFAULT_SHOCK,
     sagTargets: input.sagTargets ?? existing?.sagTargets ?? TRACK_SAG_TARGETS,
+    ...pick('sagReadings', input.sagReadings ?? existing?.sagReadings),
     ...pick('notes', input.notes ?? existing?.notes),
     createdAt: existing?.createdAt ?? now,
   }
