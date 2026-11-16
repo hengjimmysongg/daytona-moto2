@@ -123,6 +123,14 @@ rider's log book and a bad fit for anything else. The deployed API fails
 closed when the key is missing, because the alternative — a writable database
 on a public URL — is worse than an app that will not start.
 
+## Deploying to Vercel
+
+`vercel.json` deploys the **app** to Vercel: the same Vite build, with deep
+links falling back to the app. The `/api` sync server is a Netlify Function and
+does not run there, so on Vercel the log lives on each device and sync stays
+off. `/api` is left out of the fallback on purpose, so a key entered in
+**Garage → Sync** gets a plain 404 rather than the app's HTML.
+
 ---
 
 ## The API
