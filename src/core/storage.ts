@@ -211,6 +211,25 @@ export function sessionsForDay(data: GarageData, trackDayId: string): Session[] 
     .sort((a, b) => a.number - b.number)
 }
 
+/** Every session run on one bike, newest first. */
+export function sessionsForBike(data: GarageData, bikeId: string): Session[] {
+  const days = new Map(
+    data.trackDays.filter((day) => day.bikeId === bikeId).map((day) => [day.id, day]),
+  )
+  return data.sessions
+    .filter((session) => days.has(session.trackDayId))
+    .sort((a, b) => {
+      const dayA = days.get(a.trackDayId)!
+      const dayB = days.get(b.trackDayId)!
+      // Two days on one date stay apart rather than interleaving by number.
+      return (
+        dayB.date.localeCompare(dayA.date) ||
+        dayB.createdAt - dayA.createdAt ||
+        b.number - a.number
+      )
+    })
+}
+
 /** Track days newest first. */
 export function trackDaysByDate(data: GarageData): TrackDay[] {
   return [...data.trackDays].sort((a, b) => b.date.localeCompare(a.date))

@@ -22,7 +22,7 @@
  * Every number here is millimetres of *wheel* travel.
  */
 
-import type { Axle, Bike, SagTargets } from './types'
+import type { Axle, Bike, SagTargets, SuspensionSetup } from './types'
 
 export interface SagMeasurement {
   /** L1 — fully extended, wheel unloaded. */
@@ -240,4 +240,67 @@ export function describePreloadChange(result: SagResult): string | null {
 
 function fmt(value: number, decimals = 1): string {
   return value.toFixed(decimals)
+}
+
+/* ------------------------------------------------------------------ */
+/* Logging a check against a session                                   */
+/* ------------------------------------------------------------------ */
+
+/** Sag as a session keeps it: rider and free sag per end, in mm. */
+export type RecordedSag = NonNullable<SuspensionSetup['sag']>
+
+/** The checks worth logging: an end with no valid reading is simply absent. */
+export type SagResults = Partial<Record<Axle, SagResult>>
+
+const RIDER_KEY = { front: 'frontRider', rear: 'rearRider' } as const
+const FREE_KEY = { front: 'frontFree', rear: 'rearFree' } as const
+
+/** To the tenth of a millimetre shown on screen, so the log matches it. */
+function tenth(value: number): number {
+  return Math.round(value * 10) / 10
+}
+
+/**
+ * Write a sag check into a session's recorded sag.
+ *
+ * An end that was measured replaces both its numbers, so a re-check without
+ * L2 does not leave the old free sag sitting next to a new rider sag as if
+ * they came from the same check. An end that was not measured keeps whatever
+ * the session already had.
+ */
+export function recordSag(existing: RecordedSag | undefined, results: SagResults): RecordedSag {
+  const next: RecordedSag = { ...existing }
+  for (const axle of ['front', 'rear'] as const) {
+    const result = results[axle]
+    if (!result) continue
+    next[RIDER_KEY[axle]] = tenth(result.riderSag)
+    if (result.freeSag === undefined) delete next[FREE_KEY[axle]]
+    else next[FREE_KEY[axle]] = tenth(result.freeSag)
+  }
+  return next
+}
+
+/** True when the session already holds exactly this check. */
+export function isSagRecorded(existing: RecordedSag | undefined, results: SagResults): boolean {
+  const axles = (['front', 'rear'] as const).filter((axle) => results[axle])
+  if (axles.length === 0 || !existing) return false
+  const written = recordSag(existing, results)
+  return axles.every(
+    (axle) =>
+      existing[RIDER_KEY[axle]] === written[RIDER_KEY[axle]] &&
+      existing[FREE_KEY[axle]] === written[FREE_KEY[axle]],
+  )
+}
+
+/** Rider and free sag for one end of a recorded check. */
+export function recordedFor(
+  sag: RecordedSag | undefined,
+  axle: Axle,
+): { rider?: number; free?: number } {
+  const rider = sag?.[RIDER_KEY[axle]]
+  const free = sag?.[FREE_KEY[axle]]
+  return {
+    ...(rider === undefined ? {} : { rider }),
+    ...(free === undefined ? {} : { free }),
+  }
 }

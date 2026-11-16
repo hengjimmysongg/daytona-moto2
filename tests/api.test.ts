@@ -367,6 +367,22 @@ describe('garage snapshot', () => {
     expect((await call('GET', '/api/garage')).body.bikes[0].sagReadings).toEqual(sagReadings)
   })
 
+  it('keeps sag recorded on a session, and lets it be removed', async () => {
+    await seedBike()
+    const dayId = await seedDay()
+    await call('POST', '/api/sessions', { trackDayId: dayId })
+    const snapshot = (await call('GET', '/api/garage')).body
+    const sag = { frontRider: 33, frontFree: 27.5, rearRider: 28 }
+    snapshot.sessions[0].setup.sag = sag
+
+    const pushed = await call('PUT', '/api/garage', snapshot)
+    expect(pushed.body.sessions[0].setup.sag).toEqual(sag)
+
+    delete snapshot.sessions[0].setup.sag
+    const removed = await call('PUT', '/api/garage', snapshot)
+    expect(removed.body.sessions[0].setup).not.toHaveProperty('sag')
+  })
+
   it('deletes rows the incoming document no longer has', async () => {
     await seedBike()
     const dayId = await seedDay()

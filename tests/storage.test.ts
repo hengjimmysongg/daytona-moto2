@@ -9,6 +9,7 @@ import {
   memoryStorage,
   previousSession,
   saveGarage,
+  sessionsForBike,
   sessionsForDay,
   STORAGE_KEY,
   suggestExportFilename,
@@ -187,5 +188,30 @@ describe('queries', () => {
   it('has no previous session for the first one out', () => {
     const first = sessionsForDay(data, 'day1')[0]!
     expect(previousSession(data, first)).toBeUndefined()
+  })
+  it('lists a bike’s sessions newest first, across days', () => {
+    expect(sessionsForBike(data, 'bike').map((s) => s.id)).toEqual(['other', 's3', 's2', 's1'])
+  })
+
+  it('leaves out sessions run on another bike', () => {
+    const twoBikes: GarageData = {
+      ...data,
+      trackDays: [...data.trackDays, { ...day('day3', '2026-06-01'), bikeId: 'spare' }],
+      sessions: [...data.sessions, session('spare1', 'day3', 1)],
+    }
+    expect(sessionsForBike(twoBikes, 'spare').map((s) => s.id)).toEqual(['spare1'])
+    expect(sessionsForBike(twoBikes, 'bike')).toHaveLength(4)
+  })
+
+  it('keeps two days on the same date apart', () => {
+    const sameDate: GarageData = {
+      ...createEmptyGarage(0),
+      trackDays: [
+        { ...day('am', '2026-03-07'), createdAt: 1 },
+        { ...day('pm', '2026-03-07'), createdAt: 2 },
+      ],
+      sessions: [session('am1', 'am', 1), session('am2', 'am', 2), session('pm1', 'pm', 1)],
+    }
+    expect(sessionsForBike(sameDate, 'bike').map((s) => s.id)).toEqual(['pm1', 'am2', 'am1'])
   })
 })
